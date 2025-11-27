@@ -1,0 +1,12 @@
+gspread
+google-auth
+google-auth-oauthlib
+google-auth-httplib2
+selenium
+webdriver-manager
+requests
+python-dotenv
+openpyxl
+pandas
+beautifulsoup4
+lxml
