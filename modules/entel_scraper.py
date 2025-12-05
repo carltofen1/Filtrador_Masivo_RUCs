@@ -29,7 +29,7 @@ class EntelScraper:
             
             self.driver = webdriver.Chrome(options=chrome_options)
             self.wait = WebDriverWait(self.driver, 15)
-            print("Navegador Chrome inicializado (headless)")
+            print("Navegador Chrome inicializado")
     
     def login(self) -> bool:
         try:
@@ -98,6 +98,11 @@ class EntelScraper:
                     )
                     print("Login exitoso")
                     self.logged_in = True
+                    
+                    # Navegar a Operaciones para "calentar" la sesion
+                    self.driver.get(self.url_operaciones)
+                    time.sleep(1)
+                    
                     return True
                 except:
                     print("Error: No se pudo verificar el login")
@@ -119,6 +124,7 @@ class EntelScraper:
         try:
             # Ir a Operaciones
             self.driver.get(self.url_operaciones)
+            time.sleep(0.5)
             
             # Ingresar RUC
             ruc_input = self.wait.until(
@@ -128,67 +134,41 @@ class EntelScraper:
             ruc_input.send_keys(ruc)
             
             # Click en Filtro
-            filter_btn = self.driver.find_element(By.ID, "filter")
-            filter_btn.click()
+            self.driver.find_element(By.ID, "filter").click()
             
-            # Esperar a que la tabla termine de cargar
-            max_intentos = 15
-            tabla_cargada = False
-            for intento in range(max_intentos):
-                time.sleep(0.3)
+            # Esperar y leer
+            for i in range(30):
+                time.sleep(0.5)
                 try:
                     info = self.driver.find_element(By.ID, "data-table_info")
-                    info_text = info.text
                     
-                    # Si dice 0 resultados, salir
-                    if "0 to 0" in info_text or "0 entries" in info_text:
+                    if "0 to 0" in info.text:
                         return None
                     
-                    # Verificar que hay resultados Y que las filas estan cargadas
-                    if "Showing" in info_text and "Loading" not in info_text:
+                    if "Showing" in info.text:
                         tbody = self.driver.find_element(By.CSS_SELECTOR, "#data-table tbody")
                         filas = tbody.find_elements(By.TAG_NAME, "tr")
-                        if filas and len(filas) > 0:
-                            celdas = filas[0].find_elements(By.TAG_NAME, "td")
-                            if len(celdas) >= 5 and celdas[4].text.strip():
-                                tabla_cargada = True
-                                break
+                        
+                        if filas:
+                            # Buscar en TODAS las filas hasta encontrar telefono valido
+                            for fila in filas:
+                                celdas = fila.find_elements(By.TAG_NAME, "td")
+                                if len(celdas) >= 5:
+                                    tel = celdas[4].text.strip()
+                                    if tel:
+                                        telefono = tel.replace(' ', '').replace('-', '')
+                                        if telefono.isdigit() and len(telefono) >= 8:
+                                            print(f"Telefono: {telefono}")
+                                            return telefono
+                            # Si ninguna fila tiene telefono valido
+                            return None
                 except:
                     pass
             
-            if not tabla_cargada:
-                return None
-            
-            # Buscar el telefono en la tabla
-            try:
-                tbody = self.driver.find_element(By.CSS_SELECTOR, "#data-table tbody")
-                filas = tbody.find_elements(By.TAG_NAME, "tr")
-                
-                if not filas:
-                    return None
-                
-                # El telefono esta en la 5ta columna (indice 4)
-                primera_fila = filas[0]
-                celdas = primera_fila.find_elements(By.TAG_NAME, "td")
-                
-                if len(celdas) >= 5:
-                    telefono = celdas[4].text.strip()
-                    # Validar telefono: 9 digitos empezando con 9, o 11 digitos empezando con 519
-                    if telefono and telefono.isdigit():
-                        if (len(telefono) == 9 and telefono.startswith('9')) or \
-                           (len(telefono) == 11 and telefono.startswith('519')):
-                            print(f"Telefono: {telefono}")
-                            return telefono
-                    return None
-                else:
-                    return None
-                    
-            except Exception as e:
-                print(f"Error tabla: {e}")
-                return None
+            return None
                 
         except Exception as e:
-            print(f"Error buscando telefono para RUC {ruc}: {e}")
+            print(f"Error: {e}")
             return None
     
     def close(self):

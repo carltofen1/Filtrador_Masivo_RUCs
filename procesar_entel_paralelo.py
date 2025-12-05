@@ -129,7 +129,7 @@ def main():
                 if workers_rucs[worker_id]:
                     future = executor.submit(procesar_worker, worker_id, workers_rucs[worker_id], sheets)
                     futures.append(future)
-                    time.sleep(2)  # Delay entre cada worker para no saturar
+                    time.sleep(2)  # Delay entre cada worker
             
             results = []
             for future in as_completed(futures):
