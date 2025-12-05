@@ -11,6 +11,10 @@ CLARO_USERNAME = os.getenv('CLARO_USERNAME', '')
 CLARO_PASSWORD = os.getenv('CLARO_PASSWORD', '')
 CLARO_URL = os.getenv('CLARO_URL', '')
 
+ENTEL_USERNAME = os.getenv('ENTEL_USERNAME', 'ventas.admin2@entelempresa.pe')
+ENTEL_PASSWORD = os.getenv('ENTEL_PASSWORD', 'Interconexion123.')
+ENTEL_URL = 'https://entel.insolutions.pe/entelid-portal/Account/Login'
+
 BATCH_SIZE = int(os.getenv('BATCH_SIZE', 5))
 DELAY_BETWEEN_BATCHES = float(os.getenv('DELAY_BETWEEN_BATCHES', 0.2))
 
@@ -25,7 +29,8 @@ COLUMNS = {
     'PROVINCIA': 7,
     'DISTRITO': 8,
     'DIRECCION': 9,
-    'ESTADO': 10
+    'ESTADO': 10,
+    'ESTADO_ENTEL': 11
 }
 
 STATUS = {
