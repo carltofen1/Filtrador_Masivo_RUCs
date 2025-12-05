@@ -1,17 +1,17 @@
-# 🚀 Filtrador Masivo de RUCs - Claro
+#  Filtrador Masivo de RUCs - Claro
 
 Sistema automatizado para extraer y consolidar información de empresas peruanas usando RUC, combinando datos de SUNAT y la plataforma interna de Claro.
 
-## 📋 Características
+##  Características
 
-- ✅ **Consulta automática a SUNAT** (Razón Social, Dirección, Representante Legal, DNI)
-- ✅ **Scraping de plataforma Claro** (Teléfonos, Operador, Cantidad de Líneas)
-- ✅ **Integración con Google Sheets** en tiempo real
-- ✅ **Batch updates optimizado** (mínimo uso de API calls)
-- ✅ **Procesamiento masivo** con manejo de errores robusto
-- ✅ **Progreso en vivo** visible en Google Sheets
+-  **Consulta automática a SUNAT** (Razón Social, Dirección, Representante Legal, DNI)
+-  **Scraping de plataforma Claro** (Teléfonos, Operador, Cantidad de Líneas)
+-  **Integración con Google Sheets** en tiempo real
+-  **Batch updates optimizado** (mínimo uso de API calls)
+-  **Procesamiento masivo** con manejo de errores robusto
+-  **Progreso en vivo** visible en Google Sheets
 
-## 📊 Datos Extraídos
+## Datos Extraídos
 
 | Campo | Fuente |
 |-------|--------|
@@ -77,7 +77,7 @@ DELAY_BETWEEN_BATCHES=1
    ```
 5. Pégalo en el archivo `.env`
 
-## 🎯 Uso
+##  Uso
 
 ### Preparar datos
 1. En la pestaña **"Datos_Filtrados"**, coloca los RUCs en la columna B (empezando en B2)
@@ -91,9 +91,9 @@ python test_completo.py
 ```
 
 Este script verificará:
-- ✅ Conexión a Google Sheets
-- ✅ Lectura de RUCs pendientes
-- ✅ Funcionamiento del scraper de SUNAT
+- Conexión a Google Sheets
+- Lectura de RUCs pendientes
+- Funcionamiento del scraper de SUNAT
 
 ### Ejecutar el procesamiento completo
 ```bash
@@ -110,7 +110,7 @@ python main.py
   - **"Error - SUNAT"** → No se pudo obtener datos de SUNAT
   - **"Error: ..."** → Otro tipo de error
 
-## ⚙️ Configuración de Claro Scraper
+##  Configuración de Claro Scraper
 
 **IMPORTANTE**: El módulo `claro_scraper.py` necesita ser configurado según la estructura de tu plataforma interna.
 
@@ -132,7 +132,7 @@ python main.py
 4. Haz clic en los campos que necesitas
 5. Copia el ID, clase o selector CSS
 
-## 📁 Estructura del Proyecto
+##  Estructura del Proyecto
 
 ```
 Filtrador_Masivo_RUCs/
@@ -168,7 +168,7 @@ Filtrador_Masivo_RUCs/
 - El script usa múltiples APIs de respaldo
 - Si todas fallan, verifica tu conexión a internet
 
-## 📊 Optimización de API Calls
+##  Optimización de API Calls
 
 El sistema usa **batch updates** para minimizar llamadas a la API de Google Sheets:
 
@@ -176,7 +176,7 @@ El sistema usa **batch updates** para minimizar llamadas a la API de Google Shee
 - **Con batch updates**: ~41 requests para 2000 RUCs
 - **Ahorro**: 98% menos requests
 
-## 🤝 Contribuir
+##  Contribuir
 
 Este es un proyecto interno de Claro. Para contribuir:
 1. Crea un branch para tu feature
@@ -185,11 +185,11 @@ Este es un proyecto interno de Claro. Para contribuir:
 
 ## 📄 Licencia
 
-Uso interno - Claro Perú
+Patrick Pozsgai 
 
-## 👨‍💻 Autor
+##  Autor
 
-Desarrollado para el equipo de Claro Perú
+Desarrollado por mí :V (Carltofen1)
 
 ---
 
