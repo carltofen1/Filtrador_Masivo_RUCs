@@ -5,15 +5,16 @@ import config
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Lock
 
-# Lock para sincronizar escrituras a Sheets
+# Lock y cola compartida para acumular todos los updates
 sheets_lock = Lock()
+global_updates = []
 
 def procesar_worker(worker_id, rucs_asignados, sheets):
     """
     Procesa un subconjunto de RUCs asignados a este worker
     """
+    global global_updates
     sunat = SunatScraper()
-    batch_updates = []
     processed = 0
     errors = 0
     
@@ -24,20 +25,17 @@ def procesar_worker(worker_id, rucs_asignados, sheets):
             ruc = ruc_data['ruc']
             row = ruc_data['row']
             
-            print(f"\n[Worker {worker_id}] Procesando {idx}/{len(rucs_asignados)}: RUC {ruc}")
+            print(f"[Worker {worker_id}] {idx}/{len(rucs_asignados)}: RUC {ruc}")
             
             try:
                 sunat_data = sunat.consultar_ruc(ruc)
                 
                 if not sunat_data:
-                    print(f"[Worker {worker_id}] No se pudo obtener datos de SUNAT para {ruc}")
-                    batch_updates.append({
-                        'row': row,
-                        'data': [
-                            row - 1, ruc, '', '', '', '', '', '', '', '',
-                            'Error - SUNAT'
-                        ]
-                    })
+                    with sheets_lock:
+                        global_updates.append({
+                            'row': row,
+                            'data': [row - 1, ruc, '', '', '', '', '', '', '', '', 'Error - SUNAT']
+                        })
                     errors += 1
                 else:
                     estado_final = sunat_data.get('estado_contribuyente', 'DESCONOCIDO')
@@ -56,41 +54,29 @@ def procesar_worker(worker_id, rucs_asignados, sheets):
                         estado_final
                     ]
                     
-                    batch_updates.append({
-                        'row': row,
-                        'data': row_data
-                    })
+                    with sheets_lock:
+                        global_updates.append({'row': row, 'data': row_data})
                     
                     processed += 1
-                    print(f"[Worker {worker_id}] Datos preparados para RUC {ruc}")
                 
-                # Guardar cada 20 registros
-                if len(batch_updates) >= 20:
-                    with sheets_lock:
-                        print(f"\n[Worker {worker_id}] Guardando batch de {len(batch_updates)} registros...")
-                        sheets.update_row_batch(batch_updates)
-                        batch_updates = []
-                        time.sleep(0.2)
+                # Guardar cada 100 registros GLOBALES (todos los workers juntos)
+                with sheets_lock:
+                    if len(global_updates) >= 100:
+                        print(f"\n*** Guardando {len(global_updates)} registros en batch ***")
+                        sheets.update_row_batch(global_updates)
+                        global_updates = []
+                        time.sleep(1)
                 
             except Exception as e:
-                print(f"[Worker {worker_id}] Error procesando RUC {ruc}: {str(e)}")
-                error_msg = str(e)[:50]
-                batch_updates.append({
-                    'row': row,
-                    'data': [
-                        row - 1, ruc, '', '', '', '', '', '', '', '',
-                        f'Error: {error_msg}'
-                    ]
-                })
+                print(f"[Worker {worker_id}] Error RUC {ruc}: {str(e)[:50]}")
+                with sheets_lock:
+                    global_updates.append({
+                        'row': row,
+                        'data': [row - 1, ruc, '', '', '', '', '', '', '', '', f'Error: {str(e)[:30]}']
+                    })
                 errors += 1
         
-        # Guardar registros restantes
-        if batch_updates:
-            with sheets_lock:
-                print(f"\n[Worker {worker_id}] Guardando últimos {len(batch_updates)} registros...")
-                sheets.update_row_batch(batch_updates)
-        
-        print(f"\n[Worker {worker_id}] Finalizado - Procesados: {processed}, Errores: {errors}")
+        print(f"[Worker {worker_id}] Finalizado - Procesados: {processed}, Errores: {errors}")
         return {'worker_id': worker_id, 'processed': processed, 'errors': errors}
         
     finally:
@@ -131,7 +117,7 @@ def main():
             print(f"  Worker {i}: {len(workers_rucs[i])} RUCs")
         
         print(f"\nIniciando procesamiento paralelo con 5 workers...")
-        print("Cada worker guardará en Sheets cada 20 registros")
+        print("Se guardarán en Sheets cada 100 registros acumulados")
         
         start_time = time.time()
         
@@ -142,6 +128,7 @@ def main():
                 if workers_rucs[worker_id]:  # Solo si tiene RUCs asignados
                     future = executor.submit(procesar_worker, worker_id, workers_rucs[worker_id], sheets)
                     futures.append(future)
+                    time.sleep(2)  # Delay entre workers
             
             # Esperar a que todos terminen
             results = []
@@ -151,6 +138,11 @@ def main():
                     results.append(result)
                 except Exception as e:
                     print(f"\nError en worker: {str(e)}")
+        
+        # Guardar registros restantes
+        if global_updates:
+            print(f"\n*** Guardando últimos {len(global_updates)} registros ***")
+            sheets.update_row_batch(global_updates)
         
         end_time = time.time()
         total_time = end_time - start_time
