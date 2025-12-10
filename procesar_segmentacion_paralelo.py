@@ -41,17 +41,10 @@ def procesar_worker(worker_id, rucs_asignados, sheets):
                 with sheets_lock:
                     if tipo_cliente and tipo_cliente not in ['Sin Segmento', 'Sin Datos']:
                         found += 1
-                        global_updates.append({
-                            'row': row, 
-                            'tipo_cliente': tipo_cliente, 
-                            'estado': 'OK'
-                        })
-                    else:
-                        global_updates.append({
-                            'row': row, 
-                            'tipo_cliente': tipo_cliente or '', 
-                            'estado': tipo_cliente or 'ERROR'
-                        })
+                    global_updates.append({
+                        'row': row, 
+                        'segmento': tipo_cliente or 'Sin Segmento'
+                    })
                 
                 processed += 1
                 
@@ -61,15 +54,10 @@ def procesar_worker(worker_id, rucs_asignados, sheets):
                         print(f"\n*** Guardando {len(global_updates)} registros en batch ***")
                         batch_data = []
                         for update in global_updates:
-                            # Columna M para tipo cliente (índice 12)
-                            batch_data.append({
-                                'range': f"M{update['row']}", 
-                                'values': [[update['tipo_cliente']]]
-                            })
-                            # Columna N para estado segmentación (índice 13)
+                            # Columna N para SEGMENTO (índice 13)
                             batch_data.append({
                                 'range': f"N{update['row']}", 
-                                'values': [[update['estado']]]
+                                'values': [[update['segmento']]]
                             })
                         sheets.worksheet.batch_update(batch_data)
                         global_updates = []
@@ -80,8 +68,7 @@ def procesar_worker(worker_id, rucs_asignados, sheets):
                 with sheets_lock:
                     global_updates.append({
                         'row': row, 
-                        'tipo_cliente': '', 
-                        'estado': 'ERROR'
+                        'segmento': 'ERROR'
                     })
         
         print(f"[Worker {worker_id}] Finalizado - Encontrados: {found}/{processed}")
@@ -109,17 +96,15 @@ def main():
             if len(row) > config.COLUMNS['RUC']:
                 ruc_raw = row[config.COLUMNS['RUC']].strip() if len(row) > config.COLUMNS['RUC'] else ''
                 
-                # Columna M (índice 12) para tipo cliente
-                tipo_cliente = row[12].strip() if len(row) > 12 else ''
-                # Columna N (índice 13) para estado segmentación
-                estado_seg = row[13].strip() if len(row) > 13 else ''
+                # Columna N (índice 13) para SEGMENTO
+                segmento = row[13].strip() if len(row) > 13 else ''
                 
                 # Limpieza agresiva del RUC
                 solo_digitos = ''.join(c for c in ruc_raw if c.isdigit())
                 ruc = solo_digitos[:11] if len(solo_digitos) >= 11 else solo_digitos
                 
                 if ruc and len(ruc) == 11:
-                    if not tipo_cliente and not estado_seg:
+                    if not segmento:
                         rucs_sin_segmentacion.append({
                             'ruc': ruc,
                             'row': idx
@@ -176,12 +161,8 @@ def main():
             batch_data = []
             for update in global_updates:
                 batch_data.append({
-                    'range': f"M{update['row']}", 
-                    'values': [[update['tipo_cliente']]]
-                })
-                batch_data.append({
                     'range': f"N{update['row']}", 
-                    'values': [[update['estado']]]
+                    'values': [[update['segmento']]]
                 })
             sheets.worksheet.batch_update(batch_data)
         
