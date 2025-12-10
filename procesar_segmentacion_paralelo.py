@@ -1,6 +1,6 @@
 import time
 from modules.sheets_manager import SheetsManager
-from modules.entel_scraper import EntelScraper
+from modules.segmentacion_scraper import SegmentacionScraper
 import config
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Lock
@@ -14,7 +14,7 @@ def procesar_worker(worker_id, rucs_asignados, sheets):
     Procesa un subconjunto de RUCs asignados a este worker
     """
     global global_updates
-    entel = EntelScraper()
+    segmentacion = SegmentacionScraper()
     processed = 0
     found = 0
     
@@ -22,7 +22,7 @@ def procesar_worker(worker_id, rucs_asignados, sheets):
     
     try:
         # Hacer login
-        if not entel.login():
+        if not segmentacion.login():
             print(f"[Worker {worker_id}] Error: No se pudo iniciar sesion")
             return {'worker_id': worker_id, 'processed': 0, 'found': 0}
         
@@ -33,25 +33,44 @@ def procesar_worker(worker_id, rucs_asignados, sheets):
             print(f"[Worker {worker_id}] {idx}/{len(rucs_asignados)}: RUC {ruc}")
             
             try:
-                telefono = entel.buscar_telefono(ruc)
+                tipo_cliente = segmentacion.buscar_tipo_cliente(ruc)
+                
+                # Mostrar resultado en terminal
+                print(f"    => {tipo_cliente or 'ERROR'}")
                 
                 with sheets_lock:
-                    if telefono:
+                    if tipo_cliente and tipo_cliente not in ['Sin Segmento', 'Sin Datos']:
                         found += 1
-                        global_updates.append({'row': row, 'telefono': telefono, 'estado': 'OK'})
+                        global_updates.append({
+                            'row': row, 
+                            'tipo_cliente': tipo_cliente, 
+                            'estado': 'OK'
+                        })
                     else:
-                        global_updates.append({'row': row, 'telefono': '', 'estado': 'SIN REGISTRO'})
+                        global_updates.append({
+                            'row': row, 
+                            'tipo_cliente': tipo_cliente or '', 
+                            'estado': tipo_cliente or 'ERROR'
+                        })
                 
                 processed += 1
                 
-                # Guardar cada 100 registros GLOBALES (todos los workers juntos)
+                # Guardar cada 50 registros GLOBALES
                 with sheets_lock:
-                    if len(global_updates) >= 100:
+                    if len(global_updates) >= 50:
                         print(f"\n*** Guardando {len(global_updates)} registros en batch ***")
                         batch_data = []
                         for update in global_updates:
-                            batch_data.append({'range': f"E{update['row']}", 'values': [[update['telefono']]]})
-                            batch_data.append({'range': f"L{update['row']}", 'values': [[update['estado']]]})
+                            # Columna M para tipo cliente (índice 12)
+                            batch_data.append({
+                                'range': f"M{update['row']}", 
+                                'values': [[update['tipo_cliente']]]
+                            })
+                            # Columna N para estado segmentación (índice 13)
+                            batch_data.append({
+                                'range': f"N{update['row']}", 
+                                'values': [[update['estado']]]
+                            })
                         sheets.worksheet.batch_update(batch_data)
                         global_updates = []
                         time.sleep(1)
@@ -59,82 +78,89 @@ def procesar_worker(worker_id, rucs_asignados, sheets):
             except Exception as e:
                 print(f"[Worker {worker_id}] Error RUC {ruc}: {str(e)[:50]}")
                 with sheets_lock:
-                    global_updates.append({'row': row, 'telefono': '', 'estado': 'ERROR'})
+                    global_updates.append({
+                        'row': row, 
+                        'tipo_cliente': '', 
+                        'estado': 'ERROR'
+                    })
         
         print(f"[Worker {worker_id}] Finalizado - Encontrados: {found}/{processed}")
         return {'worker_id': worker_id, 'processed': processed, 'found': found}
         
     finally:
-        entel.close()
+        segmentacion.close()
 
 def main():
     print("=" * 60)
-    print("PROCESADOR DE TELEFONOS ENTEL - MODO PARALELO (5 WORKERS)")
+    print("PROCESADOR DE SEGMENTACION - MODO PARALELO (3 WORKERS)")
     print("=" * 60)
     
     print("\nConectando a Google Sheets...")
     sheets = SheetsManager()
     
     try:
-        print("\nObteniendo RUCs sin telefono...")
+        print("\nObteniendo RUCs sin segmentacion...")
         all_values = sheets.worksheet.get_all_values()
         
         print(f"Total filas en sheet: {len(all_values)}")
         
-        rucs_sin_telefono = []
+        rucs_sin_segmentacion = []
         for idx, row in enumerate(all_values[1:], start=2):
             if len(row) > config.COLUMNS['RUC']:
                 ruc_raw = row[config.COLUMNS['RUC']].strip() if len(row) > config.COLUMNS['RUC'] else ''
-                telefono = row[config.COLUMNS['TELEFONOS']].strip() if len(row) > config.COLUMNS['TELEFONOS'] else ''
-                estado_entel = row[config.COLUMNS['ESTADO_ENTEL']].strip() if len(row) > config.COLUMNS['ESTADO_ENTEL'] else ''
                 
-                # Limpieza agresiva: extraer SOLO dígitos
+                # Columna M (índice 12) para tipo cliente
+                tipo_cliente = row[12].strip() if len(row) > 12 else ''
+                # Columna N (índice 13) para estado segmentación
+                estado_seg = row[13].strip() if len(row) > 13 else ''
+                
+                # Limpieza agresiva del RUC
                 solo_digitos = ''.join(c for c in ruc_raw if c.isdigit())
-                # Tomar solo los primeros 11 dígitos
                 ruc = solo_digitos[:11] if len(solo_digitos) >= 11 else solo_digitos
                 
                 if ruc and len(ruc) == 11:
-                    if not telefono and not estado_entel:
-                        rucs_sin_telefono.append({
+                    if not tipo_cliente and not estado_seg:
+                        rucs_sin_segmentacion.append({
                             'ruc': ruc,
                             'row': idx
                         })
         
-        if not rucs_sin_telefono:
-            print("\nNo hay RUCs sin telefono para procesar")
+        if not rucs_sin_segmentacion:
+            print("\nNo hay RUCs sin segmentacion para procesar")
             return
         
-        total_rucs = len(rucs_sin_telefono)
-        print(f"\nSe encontraron {total_rucs} RUCs sin telefono")
-        print(f"Se procesaran con 5 workers en paralelo")
+        total_rucs = len(rucs_sin_segmentacion)
+        print(f"\nSe encontraron {total_rucs} RUCs sin segmentacion")
+        print(f"Se procesaran con 3 workers en paralelo")
         
-        # Dividir RUCs entre 5 workers usando modulo 5
-        workers_rucs = [[] for _ in range(5)]
+        # Dividir RUCs entre 3 workers
+        num_workers = 3
+        workers_rucs = [[] for _ in range(num_workers)]
         
-        for idx, ruc_data in enumerate(rucs_sin_telefono):
-            worker_id = idx % 5
+        for idx, ruc_data in enumerate(rucs_sin_segmentacion):
+            worker_id = idx % num_workers
             workers_rucs[worker_id].append(ruc_data)
         
         print("\nDistribucion de RUCs por worker:")
-        for i in range(5):
+        for i in range(num_workers):
             print(f"  Worker {i}: {len(workers_rucs[i])} RUCs")
         
         print("\n" + "=" * 60)
-        print("IMPORTANTE: Se abriran 5 navegadores.")
-        print("Si alguno pide CAPTCHA, resuelvelo manualmente.")
+        print("IMPORTANTE: Se abriran 3 navegadores.")
+        print("Si alguno pide verificacion, resuelvelo manualmente.")
         print("=" * 60)
         input("\nPresiona ENTER para comenzar...")
         
         start_time = time.time()
         
         # Ejecutar workers en paralelo
-        with ThreadPoolExecutor(max_workers=5) as executor:
+        with ThreadPoolExecutor(max_workers=num_workers) as executor:
             futures = []
-            for worker_id in range(5):
+            for worker_id in range(num_workers):
                 if workers_rucs[worker_id]:
                     future = executor.submit(procesar_worker, worker_id, workers_rucs[worker_id], sheets)
                     futures.append(future)
-                    time.sleep(2)  # Delay entre cada worker
+                    time.sleep(3)  # Delay entre cada worker
             
             results = []
             for future in as_completed(futures):
@@ -149,8 +175,14 @@ def main():
             print(f"\n*** Guardando ultimos {len(global_updates)} registros ***")
             batch_data = []
             for update in global_updates:
-                batch_data.append({'range': f"E{update['row']}", 'values': [[update['telefono']]]})
-                batch_data.append({'range': f"L{update['row']}", 'values': [[update['estado']]]})
+                batch_data.append({
+                    'range': f"M{update['row']}", 
+                    'values': [[update['tipo_cliente']]]
+                })
+                batch_data.append({
+                    'range': f"N{update['row']}", 
+                    'values': [[update['estado']]]
+                })
             sheets.worksheet.batch_update(batch_data)
         
         end_time = time.time()
@@ -161,10 +193,10 @@ def main():
         total_found = sum(r['found'] for r in results)
         
         print("\n" + "=" * 60)
-        print("RESUMEN DEL PROCESO - ENTEL PARALELO")
+        print("RESUMEN DEL PROCESO - SEGMENTACION PARALELO")
         print("=" * 60)
         print(f"Total procesados: {total_processed}/{total_rucs}")
-        print(f"Telefonos encontrados: {total_found}")
+        print(f"Tipos de cliente encontrados: {total_found}")
         if total_processed > 0:
             print(f"Tasa de exito: {(total_found/total_processed)*100:.2f}%")
         print(f"Tiempo total: {total_time/60:.2f} minutos ({total_time/3600:.2f} horas)")

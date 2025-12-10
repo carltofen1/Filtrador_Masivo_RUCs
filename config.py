@@ -15,6 +15,11 @@ ENTEL_USERNAME = os.getenv('ENTEL_USERNAME', 'ventas.admin2@entelempresa.pe')
 ENTEL_PASSWORD = os.getenv('ENTEL_PASSWORD', 'Interconexion123.')
 ENTEL_URL = 'https://entel.insolutions.pe/entelid-portal/Account/Login'
 
+# Segmentación (Salesforce/Claro)
+SEGMENTACION_URL = 'https://transforma.my.site.com/s/login/'
+SEGMENTACION_USERNAME = os.getenv('SEGMENTACION_USERNAME', 'usuario1h&gsolucionesdenegocios@claro.comunidad.com')
+SEGMENTACION_PASSWORD = os.getenv('SEGMENTACION_PASSWORD', 'Hgsoluciones2025+')
+
 BATCH_SIZE = int(os.getenv('BATCH_SIZE', 5))
 DELAY_BETWEEN_BATCHES = float(os.getenv('DELAY_BETWEEN_BATCHES', 0.2))
 
