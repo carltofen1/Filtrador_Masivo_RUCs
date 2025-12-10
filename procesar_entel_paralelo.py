@@ -84,11 +84,16 @@ def main():
         rucs_sin_telefono = []
         for idx, row in enumerate(all_values[1:], start=2):
             if len(row) > config.COLUMNS['RUC']:
-                ruc = row[config.COLUMNS['RUC']].strip() if len(row) > config.COLUMNS['RUC'] else ''
+                ruc_raw = row[config.COLUMNS['RUC']].strip() if len(row) > config.COLUMNS['RUC'] else ''
                 telefono = row[config.COLUMNS['TELEFONOS']].strip() if len(row) > config.COLUMNS['TELEFONOS'] else ''
                 estado_entel = row[config.COLUMNS['ESTADO_ENTEL']].strip() if len(row) > config.COLUMNS['ESTADO_ENTEL'] else ''
                 
-                if ruc and ruc.isdigit() and len(ruc) == 11:
+                # Limpieza agresiva: extraer SOLO dígitos
+                solo_digitos = ''.join(c for c in ruc_raw if c.isdigit())
+                # Tomar solo los primeros 11 dígitos
+                ruc = solo_digitos[:11] if len(solo_digitos) >= 11 else solo_digitos
+                
+                if ruc and len(ruc) == 11:
                     if not telefono and not estado_entel:
                         rucs_sin_telefono.append({
                             'ruc': ruc,

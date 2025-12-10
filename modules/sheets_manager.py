@@ -27,10 +27,17 @@ class SheetsManager:
                 if len(row) <= config.COLUMNS['RUC']:
                     continue
                 
-                ruc = row[config.COLUMNS['RUC']].strip() if len(row) > config.COLUMNS['RUC'] else ''
+                ruc_raw = row[config.COLUMNS['RUC']].strip() if len(row) > config.COLUMNS['RUC'] else ''
                 estado = row[config.COLUMNS['ESTADO']].strip().upper() if len(row) > config.COLUMNS['ESTADO'] else ''
                 
-                if ruc and ruc.isdigit() and len(ruc) == 11:
+                # Limpieza agresiva: extraer SOLO dígitos
+                solo_digitos = ''.join(c for c in ruc_raw if c.isdigit())
+                
+                # Tomar solo los primeros 11 dígitos (un RUC válido tiene 11)
+                ruc = solo_digitos[:11] if len(solo_digitos) >= 11 else solo_digitos
+                
+                # Validar: debe ser exactamente 11 dígitos
+                if ruc and len(ruc) == 11:
                     if not estado or estado == 'PENDIENTE':
                         rucs.append({
                             'ruc': ruc,
