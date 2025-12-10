@@ -25,13 +25,8 @@ class SegmentacionScraper:
         options.add_argument('--no-sandbox')
         options.add_argument('--disable-dev-shm-usage')
         options.add_argument('--window-size=1920,1080')
-        # Optimizaciones para bajo consumo
         options.add_argument('--disable-extensions')
-        options.add_argument('--disable-infobars')
-        options.add_argument('--disable-logging')
         options.add_argument('--disable-notifications')
-        options.add_argument('--blink-settings=imagesEnabled=false')  # No cargar imágenes
-        options.add_argument('--disable-animations')
         options.add_experimental_option('excludeSwitches', ['enable-logging'])
         
         self.driver = webdriver.Chrome(options=options)
@@ -87,8 +82,14 @@ class SegmentacionScraper:
             search_input.send_keys(ruc)
             search_input.send_keys(Keys.RETURN)
             
-            # Esperar resultados (máx 5 seg)
-            time.sleep(2)
+            # Esperar inteligente: que aparezca resultado o mensaje de no encontrado
+            try:
+                WebDriverWait(self.driver, 10).until(
+                    lambda d: "No se han encontrado resultados" in d.page_source or 
+                              d.find_elements(By.CSS_SELECTOR, "a.outputLookupLink")
+                )
+            except:
+                return "Sin Segmento"
             
             # Verificar si no hay resultados
             if "No se han encontrado resultados" in self.driver.page_source:
@@ -101,11 +102,11 @@ class SegmentacionScraper:
                 )
                 cliente_link.click()
                 
-                # Esperar a que cargue el formulario
-                WebDriverWait(self.driver, 8).until(
-                    EC.presence_of_element_located((By.CSS_SELECTOR, "span.test-id__field-label"))
+                # Esperar inteligente: que aparezca el campo PE Tipo de Cliente
+                WebDriverWait(self.driver, 12).until(
+                    lambda d: "PE Tipo de Cliente" in d.page_source
                 )
-                time.sleep(1)
+                time.sleep(1)  # 1 seg extra para estabilizar
                 
             except:
                 return "Sin Segmento"
