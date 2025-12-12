@@ -5,63 +5,112 @@ import config
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Lock
 
-# Lock y cola compartida para acumular todos los updates
-sheets_lock = Lock()
-global_updates = []
+# Lock para mensajes de consola solamente
+print_lock = Lock()
 
-def procesar_worker(worker_id, rucs_asignados, sheets):
+def save_updates_to_sheets(worker_sheets, updates, worker_id, max_retries=3):
     """
-    Procesa un subconjunto de RUCs asignados a este worker
+    Guarda un batch de actualizaciones con reintentos.
+    Cada worker usa su propia conexión a Sheets.
     """
-    global global_updates
+    for attempt in range(max_retries):
+        try:
+            batch_data = []
+            for update in updates:
+                row = update['row']
+                batch_data.append({'range': f"E{row}", 'values': [[update['telefono']]]})
+                batch_data.append({'range': f"L{row}", 'values': [[update['estado']]]})
+            
+            worker_sheets.worksheet.batch_update(batch_data)
+            with print_lock:
+                print(f"    [W{worker_id}] Batch guardado ({len(updates)} registros)")
+            return True
+            
+        except Exception as e:
+            with print_lock:
+                print(f"    [W{worker_id}] ERROR batch intento {attempt+1}/{max_retries}: {str(e)[:60]}")
+            if attempt < max_retries - 1:
+                time.sleep(3)
+            else:
+                # Fallback: guardar uno por uno
+                with print_lock:
+                    print(f"    [W{worker_id}] Guardando uno por uno...")
+                saved = 0
+                for update in updates:
+                    try:
+                        worker_sheets.worksheet.update(f"E{update['row']}", [[update['telefono']]])
+                        worker_sheets.worksheet.update(f"L{update['row']}", [[update['estado']]])
+                        saved += 1
+                        time.sleep(0.3)
+                    except:
+                        pass
+                with print_lock:
+                    print(f"    [W{worker_id}] Guardados {saved}/{len(updates)} uno por uno")
+                return saved > 0
+    return False
+
+def procesar_worker(worker_id, rucs_asignados):
+    """
+    Procesa un subconjunto de RUCs.
+    CADA WORKER TIENE SU PROPIA CONEXION A SHEETS.
+    """
+    # Crear conexión propia a Sheets para este worker
+    worker_sheets = SheetsManager()
+    
     entel = EntelScraper()
     processed = 0
     found = 0
+    local_updates = []  # Updates locales de este worker
     
-    print(f"\n[Worker {worker_id}] Iniciado - Procesara {len(rucs_asignados)} RUCs")
+    with print_lock:
+        print(f"\n[Worker {worker_id}] Iniciado - {len(rucs_asignados)} RUCs - Conexion propia a Sheets")
     
     try:
         # Hacer login
         if not entel.login():
-            print(f"[Worker {worker_id}] Error: No se pudo iniciar sesion")
+            with print_lock:
+                print(f"[Worker {worker_id}] Error: No se pudo iniciar sesion")
             return {'worker_id': worker_id, 'processed': 0, 'found': 0}
         
         for idx, ruc_data in enumerate(rucs_asignados, 1):
             ruc = ruc_data['ruc']
             row = ruc_data['row']
             
-            print(f"[Worker {worker_id}] {idx}/{len(rucs_asignados)}: RUC {ruc}")
+            with print_lock:
+                print(f"[W{worker_id}] {idx}/{len(rucs_asignados)}: RUC {ruc}")
             
             try:
                 telefono = entel.buscar_telefono(ruc)
                 
-                with sheets_lock:
-                    if telefono:
-                        found += 1
-                        global_updates.append({'row': row, 'telefono': telefono, 'estado': 'OK'})
-                    else:
-                        global_updates.append({'row': row, 'telefono': '', 'estado': 'SIN REGISTRO'})
+                # VALIDACION: asegurar que telefono tenga contenido real
+                telefono_limpio = telefono.strip() if telefono else ''
+                tiene_digitos = any(c.isdigit() for c in telefono_limpio) if telefono_limpio else False
+                
+                if telefono_limpio and tiene_digitos:
+                    found += 1
+                    local_updates.append({'row': row, 'telefono': telefono_limpio, 'estado': 'OK'})
+                else:
+                    local_updates.append({'row': row, 'telefono': '', 'estado': 'SIN REGISTRO'})
                 
                 processed += 1
                 
-                # Guardar cada 100 registros GLOBALES (todos los workers juntos)
-                with sheets_lock:
-                    if len(global_updates) >= 100:
-                        print(f"\n*** Guardando {len(global_updates)} registros en batch ***")
-                        batch_data = []
-                        for update in global_updates:
-                            batch_data.append({'range': f"E{update['row']}", 'values': [[update['telefono']]]})
-                            batch_data.append({'range': f"L{update['row']}", 'values': [[update['estado']]]})
-                        sheets.worksheet.batch_update(batch_data)
-                        global_updates = []
-                        time.sleep(1)
+                # Guardar cada 30 registros (cada worker guarda independientemente)
+                if len(local_updates) >= 30:
+                    save_updates_to_sheets(worker_sheets, local_updates, worker_id)
+                    local_updates = []
+                    time.sleep(1)
                 
             except Exception as e:
-                print(f"[Worker {worker_id}] Error RUC {ruc}: {str(e)[:50]}")
-                with sheets_lock:
-                    global_updates.append({'row': row, 'telefono': '', 'estado': 'ERROR'})
+                with print_lock:
+                    print(f"[W{worker_id}] Error RUC {ruc}: {str(e)[:50]}")
+                local_updates.append({'row': row, 'telefono': '', 'estado': 'ERROR'})
         
-        print(f"[Worker {worker_id}] Finalizado - Encontrados: {found}/{processed}")
+        # Guardar restantes de este worker
+        if local_updates:
+            save_updates_to_sheets(worker_sheets, local_updates, worker_id)
+        
+        with print_lock:
+            print(f"[Worker {worker_id}] Finalizado - Encontrados: {found}/{processed}")
         return {'worker_id': worker_id, 'processed': processed, 'found': found}
         
     finally:
@@ -70,9 +119,10 @@ def procesar_worker(worker_id, rucs_asignados, sheets):
 def main():
     print("=" * 60)
     print("PROCESADOR DE TELEFONOS ENTEL - MODO PARALELO (5 WORKERS)")
+    print("CADA WORKER CON SU PROPIA CONEXION A SHEETS")
     print("=" * 60)
     
-    print("\nConectando a Google Sheets...")
+    print("\nConectando a Google Sheets (lectura inicial)...")
     sheets = SheetsManager()
     
     try:
@@ -107,16 +157,18 @@ def main():
         total_rucs = len(rucs_sin_telefono)
         print(f"\nSe encontraron {total_rucs} RUCs sin telefono")
         print(f"Se procesaran con 5 workers en paralelo")
+        print("Cada worker tendra su propia conexion a Google Sheets")
         
-        # Dividir RUCs entre 5 workers usando modulo 5
-        workers_rucs = [[] for _ in range(5)]
+        # Dividir RUCs entre 5 workers
+        num_workers = 5
+        workers_rucs = [[] for _ in range(num_workers)]
         
         for idx, ruc_data in enumerate(rucs_sin_telefono):
-            worker_id = idx % 5
+            worker_id = idx % num_workers
             workers_rucs[worker_id].append(ruc_data)
         
         print("\nDistribucion de RUCs por worker:")
-        for i in range(5):
+        for i in range(num_workers):
             print(f"  Worker {i}: {len(workers_rucs[i])} RUCs")
         
         print("\n" + "=" * 60)
@@ -127,14 +179,15 @@ def main():
         
         start_time = time.time()
         
-        # Ejecutar workers en paralelo
-        with ThreadPoolExecutor(max_workers=5) as executor:
+        # Ejecutar workers en paralelo - cada uno crea su propia conexion a Sheets
+        with ThreadPoolExecutor(max_workers=num_workers) as executor:
             futures = []
-            for worker_id in range(5):
+            for worker_id in range(num_workers):
                 if workers_rucs[worker_id]:
-                    future = executor.submit(procesar_worker, worker_id, workers_rucs[worker_id], sheets)
+                    # Ya no pasamos 'sheets' - cada worker crea su propia conexion
+                    future = executor.submit(procesar_worker, worker_id, workers_rucs[worker_id])
                     futures.append(future)
-                    time.sleep(2)  # Delay entre cada worker
+                    time.sleep(3)  # Delay entre workers
             
             results = []
             for future in as_completed(futures):
@@ -143,15 +196,6 @@ def main():
                     results.append(result)
                 except Exception as e:
                     print(f"\nError en worker: {str(e)}")
-        
-        # Guardar registros restantes
-        if global_updates:
-            print(f"\n*** Guardando ultimos {len(global_updates)} registros ***")
-            batch_data = []
-            for update in global_updates:
-                batch_data.append({'range': f"E{update['row']}", 'values': [[update['telefono']]]})
-                batch_data.append({'range': f"L{update['row']}", 'values': [[update['estado']]]})
-            sheets.worksheet.batch_update(batch_data)
         
         end_time = time.time()
         total_time = end_time - start_time

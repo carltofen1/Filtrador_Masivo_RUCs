@@ -13,7 +13,7 @@ import re
 import config
 
 class SegmentacionScraper:
-    def __init__(self, headless=True):
+    def __init__(self, headless=False):  # DESACTIVADO - Salesforce no funciona bien en headless
         self.url = config.SEGMENTACION_URL
         self.username = config.SEGMENTACION_USERNAME
         self.password = config.SEGMENTACION_PASSWORD
@@ -21,13 +21,18 @@ class SegmentacionScraper:
         options = Options()
         if headless:
             options.add_argument('--headless=new')
+        
+        # Argumentos para evitar detección y mejorar compatibilidad con Salesforce
         options.add_argument('--disable-gpu')
         options.add_argument('--no-sandbox')
         options.add_argument('--disable-dev-shm-usage')
         options.add_argument('--window-size=1920,1080')
         options.add_argument('--disable-extensions')
         options.add_argument('--disable-notifications')
-        options.add_experimental_option('excludeSwitches', ['enable-logging'])
+        options.add_argument('--disable-blink-features=AutomationControlled')
+        options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
+        options.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
+        options.add_experimental_option('useAutomationExtension', False)
         
         self.driver = webdriver.Chrome(options=options)
         self.wait = WebDriverWait(self.driver, 15)
@@ -67,13 +72,15 @@ class SegmentacionScraper:
             print(f"Error en login de Segmentación: {str(e)}")
             return False
     
-    def buscar_tipo_cliente(self, ruc):
-        """Busca un RUC y extrae el PE Tipo de Cliente"""
+    def buscar_tipo_cliente(self, ruc, intento=1):
+        """Busca un RUC y extrae el PE Tipo de Cliente - Tiempos inteligentes con reintentos"""
+        MAX_INTENTOS = 2
+        
         try:
             if not self.logged_in:
                 return None
             
-            # Esperar buscador
+            # Esperar buscador (tiempo máximo, sale antes si aparece)
             search_input = self.wait.until(
                 EC.presence_of_element_located((By.CSS_SELECTOR, "input[placeholder='Search...']"))
             )
@@ -82,54 +89,94 @@ class SegmentacionScraper:
             search_input.send_keys(ruc)
             search_input.send_keys(Keys.RETURN)
             
-            # Esperar inteligente: que aparezca resultado o mensaje de no encontrado
+            # Esperar inteligente: sale inmediatamente cuando aparece resultado O no encontrado
             try:
                 WebDriverWait(self.driver, 10).until(
                     lambda d: "No se han encontrado resultados" in d.page_source or 
                               d.find_elements(By.CSS_SELECTOR, "a.outputLookupLink")
                 )
             except:
+                if intento < MAX_INTENTOS:
+                    self.driver.get("https://transforma.my.site.com/s/")
+                    time.sleep(1)
+                    return self.buscar_tipo_cliente(ruc, intento + 1)
                 return "Sin Segmento"
             
-            # Verificar si no hay resultados
+            # No hay resultados = cliente no existe en Salesforce (respuesta rápida)
             if "No se han encontrado resultados" in self.driver.page_source:
                 return "Sin Segmento"
             
-            # Hacer click en el cliente
+            # Click en el cliente
             try:
                 cliente_link = WebDriverWait(self.driver, 5).until(
                     EC.element_to_be_clickable((By.CSS_SELECTOR, "a.outputLookupLink"))
                 )
                 cliente_link.click()
                 
-                # Esperar inteligente: que aparezca el campo PE Tipo de Cliente
+                # Esperar que aparezca PE Tipo de Cliente en la página
                 WebDriverWait(self.driver, 12).until(
                     lambda d: "PE Tipo de Cliente" in d.page_source
                 )
-                time.sleep(1)  # 1 seg extra para estabilizar
+                
+                # Espera extra para que el valor se renderice (crítico para Salesforce)
+                time.sleep(1.5)
                 
             except:
-                return "Sin Segmento"
-            
-            # Extraer con regex
-            html = self.driver.page_source
-            
-            pattern = r'>PE Tipo de Cliente</span>.*?<lightning-formatted-text[^>]*>([^<]+)</lightning-formatted-text>'
-            match = re.search(pattern, html, re.DOTALL)
-            if match:
-                valor = match.group(1).strip()
-                if valor:
+                if intento < MAX_INTENTOS:
                     self.driver.get("https://transforma.my.site.com/s/")
                     time.sleep(1)
-                    return valor
+                    return self.buscar_tipo_cliente(ruc, intento + 1)
+                return "Sin Segmento"
             
-            self.driver.get("https://transforma.my.site.com/s/")
-            time.sleep(1)
+            # Extraer valor con múltiples patrones
+            html = self.driver.page_source
+            
+            # Patrón 1: Específico
+            pattern1 = r'>PE Tipo de Cliente</span>.*?<lightning-formatted-text[^>]*>([^<]+)</lightning-formatted-text>'
+            match = re.search(pattern1, html, re.DOTALL)
+            if match and match.group(1).strip():
+                valor = match.group(1).strip()
+                self._volver_inicio()
+                return valor
+            
+            # Patrón 2: Flexible
+            pattern2 = r'PE Tipo de Cliente.{0,500}<lightning-formatted-text[^>]*>([^<]+)</lightning-formatted-text>'
+            match = re.search(pattern2, html, re.DOTALL)
+            if match and match.group(1).strip():
+                valor = match.group(1).strip()
+                self._volver_inicio()
+                return valor
+            
+            # No encontró valor - reintentar (puede ser que no cargó bien)
+            if intento < MAX_INTENTOS:
+                self.driver.get("https://transforma.my.site.com/s/")
+                time.sleep(1)
+                return self.buscar_tipo_cliente(ruc, intento + 1)
+            
+            self._volver_inicio()
             return "Sin Datos"
             
         except Exception as e:
             print(f"Error RUC {ruc}: {str(e)[:30]}")
+            if intento < MAX_INTENTOS:
+                try:
+                    self.driver.get("https://transforma.my.site.com/s/")
+                    time.sleep(1)
+                    return self.buscar_tipo_cliente(ruc, intento + 1)
+                except:
+                    pass
             return None
+    
+    def _volver_inicio(self):
+        """Vuelve al inicio de forma inteligente"""
+        self.driver.get("https://transforma.my.site.com/s/")
+        # Esperar que cargue el buscador (máx 3s, sale antes si aparece)
+        try:
+            WebDriverWait(self.driver, 3).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "input[placeholder='Search...']"))
+            )
+        except:
+            pass  # Continuar de todos modos
     
     def close(self):
         """Cierra el navegador"""

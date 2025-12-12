@@ -30,13 +30,11 @@ def procesar_worker(worker_id, rucs_asignados, sheets):
             ruc = ruc_data['ruc']
             row = ruc_data['row']
             
-            print(f"[Worker {worker_id}] {idx}/{len(rucs_asignados)}: RUC {ruc}")
-            
             try:
                 tipo_cliente = segmentacion.buscar_tipo_cliente(ruc)
                 
-                # Mostrar resultado en terminal
-                print(f"    => {tipo_cliente or 'ERROR'}")
+                # Mostrar resultado
+                print(f"[W{worker_id}] {idx}/{len(rucs_asignados)}: {ruc} => {tipo_cliente or 'Sin Segmento'}")
                 
                 with sheets_lock:
                     if tipo_cliente and tipo_cliente not in ['Sin Segmento', 'Sin Datos']:
@@ -48,9 +46,9 @@ def procesar_worker(worker_id, rucs_asignados, sheets):
                 
                 processed += 1
                 
-                # Guardar cada 50 registros GLOBALES
+                # Guardar cada 100 registros GLOBALES
                 with sheets_lock:
-                    if len(global_updates) >= 50:
+                    if len(global_updates) >= 100:
                         print(f"\n*** Guardando {len(global_updates)} registros en batch ***")
                         batch_data = []
                         for update in global_updates:
@@ -79,7 +77,7 @@ def procesar_worker(worker_id, rucs_asignados, sheets):
 
 def main():
     print("=" * 60)
-    print("PROCESADOR DE SEGMENTACION - MODO PARALELO (3 WORKERS)")
+    print("PROCESADOR DE SEGMENTACION - MODO PARALELO (5 WORKERS)")
     print("=" * 60)
     
     print("\nConectando a Google Sheets...")
@@ -116,10 +114,10 @@ def main():
         
         total_rucs = len(rucs_sin_segmentacion)
         print(f"\nSe encontraron {total_rucs} RUCs sin segmentacion")
-        print(f"Se procesaran con 3 workers en paralelo")
+        print(f"Se procesaran con 5 workers en paralelo")
         
-        # Dividir RUCs entre 3 workers
-        num_workers = 3
+        # Dividir RUCs entre 5 workers
+        num_workers = 5
         workers_rucs = [[] for _ in range(num_workers)]
         
         for idx, ruc_data in enumerate(rucs_sin_segmentacion):
@@ -131,7 +129,7 @@ def main():
             print(f"  Worker {i}: {len(workers_rucs[i])} RUCs")
         
         print("\n" + "=" * 60)
-        print("IMPORTANTE: Se abriran 3 navegadores.")
+        print("IMPORTANTE: Se abriran 5 navegadores.")
         print("Si alguno pide verificacion, resuelvelo manualmente.")
         print("=" * 60)
         input("\nPresiona ENTER para comenzar...")

@@ -150,7 +150,8 @@ class EntelScraper:
                         filas = tbody.find_elements(By.TAG_NAME, "tr")
                         
                         if filas:
-                            # Buscar en TODAS las filas hasta encontrar telefono valido
+                            # Recolectar todos los teléfonos válidos (en orden de aparición)
+                            telefonos_encontrados = []
                             for fila in filas:
                                 celdas = fila.find_elements(By.TAG_NAME, "td")
                                 if len(celdas) >= 5:
@@ -158,9 +159,20 @@ class EntelScraper:
                                     if tel:
                                         telefono = tel.replace(' ', '').replace('-', '')
                                         if telefono.isdigit() and len(telefono) >= 8:
-                                            print(f"Telefono: {telefono}")
-                                            return telefono
-                            # Si ninguna fila tiene telefono valido
+                                            telefonos_encontrados.append(telefono)
+                            
+                            if telefonos_encontrados:
+                                # Tomar los 2 últimos únicos (más recientes)
+                                unicos = []
+                                for tel in reversed(telefonos_encontrados):
+                                    if tel not in unicos:
+                                        unicos.append(tel)
+                                    if len(unicos) >= 2:
+                                        break
+                                
+                                resultado = " / ".join(unicos)
+                                print(f"Telefono(s): {resultado}")
+                                return resultado
                             return None
                 except:
                     pass
