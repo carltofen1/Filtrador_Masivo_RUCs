@@ -29,6 +29,7 @@ pyinstaller --onedir --console ^
     --add-data "procesar_sunat_paralelo.py;." ^
     --add-data "procesar_entel_paralelo.py;." ^
     --add-data "procesar_segmentacion_paralelo.py;." ^
+    --add-data "procesar_osiptel_paralelo.py;." ^
     --add-data "modules;modules" ^
     launcher.py
 
@@ -40,6 +41,7 @@ copy config.py dist\launcher\
 copy procesar_sunat_paralelo.py dist\launcher\
 copy procesar_entel_paralelo.py dist\launcher\
 copy procesar_segmentacion_paralelo.py dist\launcher\
+copy procesar_osiptel_paralelo.py dist\launcher\
 xcopy modules dist\launcher\modules\ /E /I /Y
 
 echo.

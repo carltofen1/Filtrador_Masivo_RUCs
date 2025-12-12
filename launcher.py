@@ -1,6 +1,6 @@
 """
 Launcher principal para el Filtrador Masivo de RUCs
-Permite ejecutar los scrapers de SUNAT, Entel y Segmentación desde un menú
+Permite ejecutar los scrapers de SUNAT, Entel, Segmentación y OSIPTEL desde un menú
 """
 import os
 import sys
@@ -18,7 +18,8 @@ def mostrar_menu():
     print("  [1] Ejecutar SUNAT (Datos de empresas)")
     print("  [2] Ejecutar NUMEROS (Telefonos Entel)")
     print("  [3] Ejecutar SEGMENTACION (Tipo de cliente)")
-    print("  [4] Salir")
+    print("  [4] Ejecutar OSIPTEL (Cantidad de lineas)")
+    print("  [5] Salir")
     print()
     print("=" * 50)
     print()
@@ -59,11 +60,23 @@ def ejecutar_segmentacion():
         print("\nDetalles del error:")
         traceback.print_exc()
 
+def ejecutar_osiptel():
+    print("\nIniciando procesador de OSIPTEL...")
+    print("-" * 40)
+    try:
+        from procesar_osiptel_paralelo import main as osiptel_main
+        osiptel_main()
+    except Exception as e:
+        print(f"\n*** ERROR EN OSIPTEL ***")
+        print(f"Error: {str(e)}")
+        print("\nDetalles del error:")
+        traceback.print_exc()
+
 def main():
     try:
         while True:
             mostrar_menu()
-            opcion = input("Selecciona una opcion (1-4): ").strip()
+            opcion = input("Selecciona una opcion (1-5): ").strip()
             
             if opcion == "1":
                 ejecutar_sunat()
@@ -78,6 +91,10 @@ def main():
                 input("\n\nPresiona ENTER para volver al menu...")
             
             elif opcion == "4":
+                ejecutar_osiptel()
+                input("\n\nPresiona ENTER para volver al menu...")
+            
+            elif opcion == "5":
                 print("\n¡Hasta luego!")
                 sys.exit(0)
             
@@ -93,3 +110,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

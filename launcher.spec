@@ -5,7 +5,7 @@ a = Analysis(
     ['launcher.py'],
     pathex=[],
     binaries=[],
-    datas=[('credentials.json', '.'), ('.env', '.'), ('config.py', '.'), ('procesar_sunat_paralelo.py', '.'), ('procesar_entel_paralelo.py', '.'), ('procesar_segmentacion_paralelo.py', '.'), ('modules', 'modules')],
+    datas=[('credentials.json', '.'), ('.env', '.'), ('config.py', '.'), ('procesar_sunat_paralelo.py', '.'), ('procesar_entel_paralelo.py', '.'), ('procesar_segmentacion_paralelo.py', '.'), ('procesar_osiptel_paralelo.py', '.'), ('modules', 'modules')],
     hiddenimports=['selenium', 'selenium.webdriver', 'selenium.webdriver.chrome.service', 'selenium.webdriver.chrome.options', 'selenium.webdriver.common.by', 'selenium.webdriver.common.keys', 'selenium.webdriver.support.ui', 'selenium.webdriver.support.expected_conditions', 'gspread', 'google.oauth2.service_account', 'dotenv', 'concurrent.futures'],
     hookspath=[],
     hooksconfig={},
