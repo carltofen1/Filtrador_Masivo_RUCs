@@ -1,11 +1,25 @@
 import os
+import sys
 from dotenv import load_dotenv
 
-load_dotenv()
+def get_resource_path(relative_path):
+    """Obtiene la ruta correcta para archivos bundled con PyInstaller"""
+    if hasattr(sys, '_MEIPASS'):
+        # Ejecutando como ejecutable PyInstaller
+        return os.path.join(sys._MEIPASS, relative_path)
+    # Ejecutando como script normal
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), relative_path)
+
+# Cargar .env desde la ubicación correcta
+env_path = get_resource_path('.env')
+if os.path.exists(env_path):
+    load_dotenv(env_path)
+else:
+    load_dotenv()  # Fallback
 
 SPREADSHEET_ID = os.getenv('SPREADSHEET_ID', '')
 SHEET_NAME = os.getenv('SHEET_NAME', 'Datos_Filtrados')
-CREDENTIALS_FILE = 'credentials.json'
+CREDENTIALS_FILE = get_resource_path('credentials.json')
 
 CLARO_USERNAME = os.getenv('CLARO_USERNAME', '')
 CLARO_PASSWORD = os.getenv('CLARO_PASSWORD', '')

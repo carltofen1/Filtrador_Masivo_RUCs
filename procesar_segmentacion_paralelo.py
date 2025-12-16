@@ -14,7 +14,7 @@ def procesar_worker(worker_id, rucs_asignados, sheets):
     Procesa un subconjunto de RUCs asignados a este worker
     """
     global global_updates
-    segmentacion = SegmentacionScraper()
+    segmentacion = SegmentacionScraper(headless=True)
     processed = 0
     found = 0
     
@@ -129,8 +129,7 @@ def main():
             print(f"  Worker {i}: {len(workers_rucs[i])} RUCs")
         
         print("\n" + "=" * 60)
-        print("IMPORTANTE: Se abriran 5 navegadores.")
-        print("Si alguno pide verificacion, resuelvelo manualmente.")
+        print("EJECUTANDO EN MODO HEADLESS (5 workers en segundo plano)")
         print("=" * 60)
         input("\nPresiona ENTER para comenzar...")
         
