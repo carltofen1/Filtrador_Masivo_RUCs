@@ -12,14 +12,26 @@ def save_updates_to_sheets(worker_sheets, updates, worker_id, max_retries=3):
     """
     Guarda un batch de actualizaciones con reintentos.
     Cada worker usa su propia conexión a Sheets.
+    IMPORTANTE: Guarda teléfono y estado JUNTOS para evitar inconsistencias.
     """
     for attempt in range(max_retries):
         try:
             batch_data = []
             for update in updates:
                 row = update['row']
-                batch_data.append({'range': f"E{row}", 'values': [[update['telefono']]]})
-                batch_data.append({'range': f"L{row}", 'values': [[update['estado']]]})
+                # Guardar E y L juntos en una sola operación por fila
+                # E = columna 5, L = columna 12 -> guardamos E:L (columnas E hasta L)
+                # Pero como hay columnas intermedias, usamos batch separado pero validamos ANTES
+                telefono = update['telefono']
+                estado = update['estado']
+                
+                # VALIDACIÓN CRÍTICA: Solo marcar OK si hay teléfono real
+                if estado == 'OK' and not (telefono and any(c.isdigit() for c in telefono)):
+                    estado = 'SIN REGISTRO'
+                    telefono = ''
+                
+                batch_data.append({'range': f"E{row}", 'values': [[telefono]]})
+                batch_data.append({'range': f"L{row}", 'values': [[estado]]})
             
             worker_sheets.worksheet.batch_update(batch_data)
             with print_lock:
@@ -32,18 +44,29 @@ def save_updates_to_sheets(worker_sheets, updates, worker_id, max_retries=3):
             if attempt < max_retries - 1:
                 time.sleep(3)
             else:
-                # Fallback: guardar uno por uno
+                # Fallback: guardar uno por uno CON VALIDACIÓN
                 with print_lock:
                     print(f"    [W{worker_id}] Guardando uno por uno...")
                 saved = 0
                 for update in updates:
                     try:
-                        worker_sheets.worksheet.update(f"E{update['row']}", [[update['telefono']]])
-                        worker_sheets.worksheet.update(f"L{update['row']}", [[update['estado']]])
+                        telefono = update['telefono']
+                        estado = update['estado']
+                        row = update['row']
+                        
+                        # VALIDACIÓN: Solo OK si hay teléfono
+                        if estado == 'OK' and not (telefono and any(c.isdigit() for c in telefono)):
+                            estado = 'SIN REGISTRO'
+                            telefono = ''
+                        
+                        # Guardar ambos - si falla el teléfono, NO guardar estado
+                        worker_sheets.worksheet.update(f"E{row}", [[telefono]])
+                        worker_sheets.worksheet.update(f"L{row}", [[estado]])
                         saved += 1
                         time.sleep(0.3)
-                    except:
-                        pass
+                    except Exception as ex:
+                        with print_lock:
+                            print(f"    [W{worker_id}] Error guardando fila {update['row']}: {str(ex)[:30]}")
                 with print_lock:
                     print(f"    [W{worker_id}] Guardados {saved}/{len(updates)} uno por uno")
                 return saved > 0
