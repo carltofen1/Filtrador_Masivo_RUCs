@@ -111,6 +111,7 @@ class SheetsManager:
         """
         Elimina RUCs duplicados del sheet, manteniendo solo la primera ocurrencia.
         Retorna la cantidad de duplicados eliminados.
+        ULTRA-RÁPIDO: Reconstruye la hoja sin duplicados en segundos.
         """
         try:
             print("\nVerificando RUCs duplicados...")
@@ -120,43 +121,65 @@ class SheetsManager:
                 print("   No hay datos para verificar")
                 return 0
             
-            # Mapear RUCs a sus filas (índice 0 es header)
-            ruc_col = config.COLUMNS['RUC']
-            rucs_vistos = {}
-            filas_a_eliminar = []
+            headers = all_values[0]
+            datos = all_values[1:]
+            total_original = len(datos)
             
-            for idx, row in enumerate(all_values[1:], start=2):  # Empezar desde fila 2
+            # Filtrar duplicados en memoria (ultra-rápido)
+            ruc_col = config.COLUMNS['RUC']
+            rucs_vistos = set()
+            datos_unicos = []
+            
+            for row in datos:
                 if len(row) > ruc_col:
                     ruc_raw = row[ruc_col].strip()
-                    # Limpiar RUC
                     solo_digitos = ''.join(c for c in ruc_raw if c.isdigit())
                     ruc = solo_digitos[:11] if len(solo_digitos) >= 11 else solo_digitos
                     
                     if ruc and len(ruc) == 11:
-                        if ruc in rucs_vistos:
-                            filas_a_eliminar.append(idx)
-                        else:
-                            rucs_vistos[ruc] = idx
+                        if ruc not in rucs_vistos:
+                            rucs_vistos.add(ruc)
+                            datos_unicos.append(row)
+                    else:
+                        # Mantener filas sin RUC válido
+                        datos_unicos.append(row)
+                else:
+                    datos_unicos.append(row)
             
-            if not filas_a_eliminar:
+            duplicados_eliminados = total_original - len(datos_unicos)
+            
+            if duplicados_eliminados == 0:
                 print("   No se encontraron RUCs duplicados")
                 return 0
             
-            print(f"   Se encontraron {len(filas_a_eliminar)} RUCs duplicados")
-            print(f"   Eliminando filas duplicadas...")
+            print(f"   Se encontraron {duplicados_eliminados} RUCs duplicados")
+            print(f"   Reconstruyendo hoja sin duplicados...")
             
-            # Eliminar filas de abajo hacia arriba para no afectar los índices
-            filas_a_eliminar.sort(reverse=True)
+            # Reconstruir la hoja completa (solo 2-3 llamadas API)
+            # 1. Limpiar todo el contenido excepto headers
+            self.worksheet.batch_clear([f'A2:Z{total_original + 1}'])
             
-            for fila in filas_a_eliminar:
-                try:
-                    self.worksheet.delete_rows(fila)
-                    time.sleep(0.5)  # Evitar rate limiting
-                except Exception as e:
-                    print(f"   Error eliminando fila {fila}: {str(e)[:30]}")
+            # 2. Escribir datos únicos en lotes grandes
+            if datos_unicos:
+                # Dividir en lotes de 5000 filas para evitar límites de API
+                batch_size = 5000
+                for i in range(0, len(datos_unicos), batch_size):
+                    batch = datos_unicos[i:i + batch_size]
+                    start_row = i + 2  # +2 porque fila 1 son headers
+                    end_row = start_row + len(batch) - 1
+                    
+                    # Determinar el rango de columnas necesario
+                    max_cols = max(len(row) for row in batch) if batch else 1
+                    end_col = chr(ord('A') + min(max_cols - 1, 25))  # Máximo Z
+                    
+                    range_name = f'A{start_row}:{end_col}{end_row}'
+                    self.worksheet.update(range_name, batch, value_input_option='RAW')
+                    
+                    print(f"   Escritas filas {start_row} a {end_row}")
             
-            print(f"   Eliminados {len(filas_a_eliminar)} RUCs duplicados")
-            return len(filas_a_eliminar)
+            print(f"   ✓ Eliminados {duplicados_eliminados} RUCs duplicados en segundos")
+            print(f"   Total de registros: {total_original} → {len(datos_unicos)}")
+            return duplicados_eliminados
             
         except Exception as e:
             print(f"   Error al eliminar duplicados: {str(e)}")
