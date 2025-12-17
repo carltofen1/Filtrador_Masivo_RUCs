@@ -59,7 +59,6 @@ def save_updates_to_sheets(worker_sheets, updates, worker_id, max_retries=3):
                             estado = 'SIN REGISTRO'
                             telefono = ''
                         
-                        # Guardar ambos - si falla el teléfono, NO guardar estado
                         worker_sheets.worksheet.update(f"E{row}", [[telefono]])
                         worker_sheets.worksheet.update(f"L{row}", [[estado]])
                         saved += 1
