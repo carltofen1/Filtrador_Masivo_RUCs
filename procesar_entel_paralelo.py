@@ -148,9 +148,6 @@ def main():
     sheets = SheetsManager()
     
     try:
-        # Eliminar RUCs duplicados antes de procesar
-        sheets.eliminar_rucs_duplicados()
-        
         print("\nObteniendo RUCs sin telefono...")
         all_values = sheets.worksheet.get_all_values()
         
