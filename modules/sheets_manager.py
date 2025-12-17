@@ -106,3 +106,58 @@ class SheetsManager:
                 
         except Exception as e:
             print(f"Error al inicializar headers: {str(e)}")
+    
+    def eliminar_rucs_duplicados(self) -> int:
+        """
+        Elimina RUCs duplicados del sheet, manteniendo solo la primera ocurrencia.
+        Retorna la cantidad de duplicados eliminados.
+        """
+        try:
+            print("\nVerificando RUCs duplicados...")
+            all_values = self.worksheet.get_all_values()
+            
+            if len(all_values) <= 1:
+                print("   No hay datos para verificar")
+                return 0
+            
+            # Mapear RUCs a sus filas (índice 0 es header)
+            ruc_col = config.COLUMNS['RUC']
+            rucs_vistos = {}
+            filas_a_eliminar = []
+            
+            for idx, row in enumerate(all_values[1:], start=2):  # Empezar desde fila 2
+                if len(row) > ruc_col:
+                    ruc_raw = row[ruc_col].strip()
+                    # Limpiar RUC
+                    solo_digitos = ''.join(c for c in ruc_raw if c.isdigit())
+                    ruc = solo_digitos[:11] if len(solo_digitos) >= 11 else solo_digitos
+                    
+                    if ruc and len(ruc) == 11:
+                        if ruc in rucs_vistos:
+                            filas_a_eliminar.append(idx)
+                        else:
+                            rucs_vistos[ruc] = idx
+            
+            if not filas_a_eliminar:
+                print("   No se encontraron RUCs duplicados")
+                return 0
+            
+            print(f"   Se encontraron {len(filas_a_eliminar)} RUCs duplicados")
+            print(f"   Eliminando filas duplicadas...")
+            
+            # Eliminar filas de abajo hacia arriba para no afectar los índices
+            filas_a_eliminar.sort(reverse=True)
+            
+            for fila in filas_a_eliminar:
+                try:
+                    self.worksheet.delete_rows(fila)
+                    time.sleep(0.5)  # Evitar rate limiting
+                except Exception as e:
+                    print(f"   Error eliminando fila {fila}: {str(e)[:30]}")
+            
+            print(f"   Eliminados {len(filas_a_eliminar)} RUCs duplicados")
+            return len(filas_a_eliminar)
+            
+        except Exception as e:
+            print(f"   Error al eliminar duplicados: {str(e)}")
+            return 0
