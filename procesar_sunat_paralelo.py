@@ -93,6 +93,9 @@ def main():
     try:
         sheets.initialize_headers()
         
+        # Eliminar RUCs duplicados antes de procesar
+        sheets.eliminar_rucs_duplicados()
+        
         print("\nObteniendo RUCs a procesar...")
         rucs_to_process = sheets.get_rucs()
         
