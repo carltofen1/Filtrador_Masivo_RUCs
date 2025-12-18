@@ -12,28 +12,29 @@ def save_updates_to_sheets(worker_sheets, updates, worker_id, max_retries=3):
     """
     Guarda un batch de actualizaciones con reintentos.
     Cada worker usa su propia conexión a Sheets.
-    IMPORTANTE: Guarda teléfono y estado JUNTOS para evitar inconsistencias.
+    FIX: Guarda E:L como un rango CONTINUO para garantizar atomicidad.
     """
     for attempt in range(max_retries):
         try:
             batch_data = []
             for update in updates:
                 row = update['row']
-                # Guardar E y L juntos en una sola operación por fila
-                # E = columna 5, L = columna 12 -> guardamos E:L (columnas E hasta L)
-                # Pero como hay columnas intermedias, usamos batch separado pero validamos ANTES
                 telefono = update['telefono']
                 estado = update['estado']
                 
-                # VALIDACIÓN CRÍTICA: Solo marcar OK si hay teléfono real
-                if estado == 'OK' and not (telefono and any(c.isdigit() for c in telefono)):
-                    estado = 'SIN REGISTRO'
-                    telefono = ''
+                # FIX: Guardar E:L como rango continuo (E, F, G, H, I, J, K, L)
+                # E=telefono, F-K=no modificar (vacío), L=estado
+                # Usamos un solo rango E:L con valores para todas las columnas
+                # Columnas: E(tel), F, G, H, I, J, K, L(estado) = 8 columnas
+                row_values = [telefono, None, None, None, None, None, None, estado]
                 
-                batch_data.append({'range': f"E{row}", 'values': [[telefono]]})
-                batch_data.append({'range': f"L{row}", 'values': [[estado]]})
+                batch_data.append({
+                    'range': f"E{row}:L{row}", 
+                    'values': [row_values]
+                })
             
-            worker_sheets.worksheet.batch_update(batch_data)
+            # Usar value_input_option RAW para evitar interpretación
+            worker_sheets.worksheet.batch_update(batch_data, value_input_option='RAW')
             with print_lock:
                 print(f"    [W{worker_id}] Batch guardado ({len(updates)} registros)")
             return True
@@ -42,9 +43,9 @@ def save_updates_to_sheets(worker_sheets, updates, worker_id, max_retries=3):
             with print_lock:
                 print(f"    [W{worker_id}] ERROR batch intento {attempt+1}/{max_retries}: {str(e)[:60]}")
             if attempt < max_retries - 1:
-                time.sleep(3)
+                time.sleep(5)  # Más delay entre reintentos
             else:
-                # Fallback: guardar uno por uno CON VALIDACIÓN
+                # Fallback: guardar uno por uno con rango E:L
                 with print_lock:
                     print(f"    [W{worker_id}] Guardando uno por uno...")
                 saved = 0
@@ -54,15 +55,11 @@ def save_updates_to_sheets(worker_sheets, updates, worker_id, max_retries=3):
                         estado = update['estado']
                         row = update['row']
                         
-                        # VALIDACIÓN: Solo OK si hay teléfono
-                        if estado == 'OK' and not (telefono and any(c.isdigit() for c in telefono)):
-                            estado = 'SIN REGISTRO'
-                            telefono = ''
-                        
-                        worker_sheets.worksheet.update(f"E{row}", [[telefono]])
-                        worker_sheets.worksheet.update(f"L{row}", [[estado]])
+                        # Guardar E:L como un solo rango
+                        row_values = [[telefono, None, None, None, None, None, None, estado]]
+                        worker_sheets.worksheet.update(f"E{row}:L{row}", row_values, value_input_option='RAW')
                         saved += 1
-                        time.sleep(0.3)
+                        time.sleep(0.5)  # Más delay
                     except Exception as ex:
                         with print_lock:
                             print(f"    [W{worker_id}] Error guardando fila {update['row']}: {str(ex)[:30]}")
@@ -116,11 +113,11 @@ def procesar_worker(worker_id, rucs_asignados):
                 
                 processed += 1
                 
-                # Guardar cada 30 registros (cada worker guarda independientemente)
-                if len(local_updates) >= 30:
+                # Guardar cada 10 registros (reducido para evitar rate limiting)
+                if len(local_updates) >= 10:
                     save_updates_to_sheets(worker_sheets, local_updates, worker_id)
                     local_updates = []
-                    time.sleep(1)
+                    time.sleep(2)  # Más delay entre batches
                 
             except Exception as e:
                 with print_lock:
