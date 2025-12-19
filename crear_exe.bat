@@ -17,6 +17,7 @@ pyinstaller --noconfirm --onedir --console ^
     --add-data "procesar_entel_paralelo.py;." ^
     --add-data "procesar_segmentacion_paralelo.py;." ^
     --add-data "procesar_osiptel_paralelo.py;." ^
+    --add-data "whatsapp_bot.py;." ^
     --add-data "modules;modules" ^
     --hidden-import=selenium ^
     --hidden-import=selenium.webdriver ^
