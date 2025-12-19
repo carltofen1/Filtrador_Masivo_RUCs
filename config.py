@@ -34,6 +34,14 @@ SEGMENTACION_URL = 'https://transforma.my.site.com/s/login/'
 SEGMENTACION_USERNAME = os.getenv('SEGMENTACION_USERNAME', 'usuario1h&gsolucionesdenegocios@claro.comunidad.com')
 SEGMENTACION_PASSWORD = os.getenv('SEGMENTACION_PASSWORD', 'Hgsoluciones2025+')
 
+# Portal Factibilidad Claro (Cobertura)
+FACTIBILIDAD_URL = 'https://172.19.90.243/portalfactibilidad/public/'
+FACTIBILIDAD_USERNAME = os.getenv('FACTIBILIDAD_USERNAME', 'D99957628')
+FACTIBILIDAD_PASSWORD = os.getenv('FACTIBILIDAD_PASSWORD', 'Europa1234*')
+
+# WhatsApp Bot
+WHATSAPP_SESSION_PATH = os.getenv('WHATSAPP_SESSION_PATH', './whatsapp_session')
+
 BATCH_SIZE = int(os.getenv('BATCH_SIZE', 5))
 DELAY_BETWEEN_BATCHES = float(os.getenv('DELAY_BETWEEN_BATCHES', 0.2))
 

@@ -1,0 +1,22 @@
+{
+    "name": "whatsapp-bot-claro",
+    "version": "1.0.0",
+    "description": "Bot de WhatsApp para consultas de cobertura Claro",
+    "main": "index.js",
+    "scripts": {
+        "start": "node index.js"
+    },
+    "dependencies": {
+        "whatsapp-web.js": "^1.26.0",
+        "qrcode-terminal": "^0.12.0",
+        "puppeteer": "^23.0.0",
+        "axios": "^1.6.0"
+    },
+    "keywords": [
+        "whatsapp",
+        "bot",
+        "claro"
+    ],
+    "author": "",
+    "license": "ISC"
+}

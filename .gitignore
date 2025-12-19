@@ -47,3 +47,17 @@ Thumbs.db
 # Selenium
 chromedriver.exe
 geckodriver.exe
+
+# WhatsApp Bot Session
+whatsapp_session/
+
+# Node.js
+node_modules/
+whatsapp-bot-node/node_modules/
+whatsapp-bot-node/.wwebjs_auth/
+whatsapp-bot-node/.wwebjs_cache/
+package-lock.json
+*.lock
+
+# Processed messages cache
+processed_messages.json
