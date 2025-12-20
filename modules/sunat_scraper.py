@@ -142,6 +142,9 @@ class SunatScraper:
     
     def _extraer_datos_pagina(self, ruc: str) -> Optional[Dict]:
         try:
+            # Detectar si es RUC 10 (persona natural) o RUC 15/20 (empresa)
+            es_persona_natural = ruc.startswith('10')
+            
             resultado = {
                 'ruc': ruc,
                 'razon_social': '',
@@ -150,7 +153,8 @@ class SunatScraper:
                 'departamento': '',
                 'provincia': '',
                 'distrito': '',
-                'direccion': ''
+                'direccion': '',
+                'tipo_contribuyente': ''
             }
             
             try:
@@ -181,6 +185,49 @@ class SunatScraper:
                 print(f"Razón Social: {resultado['razon_social']}")
             except Exception as e:
                 print(f"No se pudo extraer Razón Social: {e}")
+            
+            # Para RUC 10 (persona natural), extraer DNI del campo "Tipo de Documento"
+            if es_persona_natural:
+                try:
+                    all_divs = self.driver.find_elements(By.CLASS_NAME, "list-group-item")
+                    
+                    for div in all_divs:
+                        div_text = div.text
+                        
+                        # Buscar "Tipo de Documento:" para extraer DNI
+                        if "Tipo de Documento:" in div_text:
+                            try:
+                                p_element = div.find_element(By.CSS_SELECTOR, "p.list-group-item-text")
+                                texto_documento = p_element.text.strip()
+                                # Formato: "DNI 70450683 - POZSGAI ACOSTA, PATRICK LAZSLO ARJUNA"
+                                if ' - ' in texto_documento:
+                                    partes = texto_documento.split(' - ', 1)
+                                    tipo_y_numero = partes[0].strip()  # "DNI 70450683"
+                                    nombre = partes[1].strip()  # "POZSGAI ACOSTA, PATRICK LAZSLO ARJUNA"
+                                    
+                                    resultado['documento_identidad'] = tipo_y_numero
+                                    resultado['representante_legal'] = nombre
+                                    
+                                    print(f"DNI (Persona Natural): {resultado['documento_identidad']}")
+                                    print(f"Nombre: {resultado['representante_legal']}")
+                            except:
+                                pass
+                        
+                        # Buscar "Tipo Contribuyente:"
+                        if "Tipo Contribuyente:" in div_text:
+                            try:
+                                p_element = div.find_element(By.CSS_SELECTOR, "p.list-group-item-text")
+                                resultado['tipo_contribuyente'] = p_element.text.strip()
+                                print(f"Tipo Contribuyente: {resultado['tipo_contribuyente']}")
+                            except:
+                                pass
+                                
+                    # Marcar que es persona natural para evitar buscar representante legal
+                    resultado['es_persona_natural'] = True
+                    resultado['sin_representante'] = True
+                    
+                except Exception as e:
+                    print(f"Error extrayendo datos de persona natural: {e}")
             
             try:
                 domicilio_divs = self.driver.find_elements(By.CLASS_NAME, "list-group-item")
@@ -258,43 +305,45 @@ class SunatScraper:
                 print(f"No se pudo extraer Estado: {e}")
                 resultado['estado_contribuyente'] = 'DESCONOCIDO'
 
-            try:
-                print("Buscando representante legal...")
-                
-                # Verificar si existe el botón de representantes legales
+            # Solo buscar representante legal para empresas (no personas naturales)
+            if not es_persona_natural:
                 try:
-                    btn_rep_legal = self.wait.until(
-                        EC.element_to_be_clickable((By.CSS_SELECTOR, "button.btnInfRepLeg"))
-                    )
-                except:
-                    # Si no existe el botón, esta empresa no tiene representantes
-                    print("Esta empresa no tiene representantes legales registrados")
-                    resultado['sin_representante'] = True
-                    return resultado
-                
-                btn_rep_legal.click()
-                time.sleep(0.5)
-                
-                tbody = self.driver.find_element(By.TAG_NAME, "tbody")
-                filas = tbody.find_elements(By.TAG_NAME, "tr")
-                
-                for fila in filas:
-                    celdas = fila.find_elements(By.TAG_NAME, "td")
+                    print("Buscando representante legal...")
                     
-                    if len(celdas) >= 3:
-                        tipo_doc = celdas[0].text.strip()
-                        num_doc = celdas[1].text.strip()
-                        nombre = celdas[2].text.strip()
+                    # Verificar si existe el botón de representantes legales
+                    try:
+                        btn_rep_legal = self.wait.until(
+                            EC.element_to_be_clickable((By.CSS_SELECTOR, "button.btnInfRepLeg"))
+                        )
+                    except:
+                        # Si no existe el botón, esta empresa no tiene representantes
+                        print("Esta empresa no tiene representantes legales registrados")
+                        resultado['sin_representante'] = True
+                        return resultado
+                    
+                    btn_rep_legal.click()
+                    time.sleep(0.5)
+                    
+                    tbody = self.driver.find_element(By.TAG_NAME, "tbody")
+                    filas = tbody.find_elements(By.TAG_NAME, "tr")
+                    
+                    for fila in filas:
+                        celdas = fila.find_elements(By.TAG_NAME, "td")
                         
-                        resultado['representante_legal'] = nombre
-                        resultado['documento_identidad'] = f"{tipo_doc} {num_doc}"
-                        
-                        print(f"Representante Legal: {resultado['representante_legal']}")
-                        print(f"Documento: {resultado['documento_identidad']}")
-                        break
-                
-            except Exception as e:
-                print(f"No se pudo extraer Representante Legal: {e}")
+                        if len(celdas) >= 3:
+                            tipo_doc = celdas[0].text.strip()
+                            num_doc = celdas[1].text.strip()
+                            nombre = celdas[2].text.strip()
+                            
+                            resultado['representante_legal'] = nombre
+                            resultado['documento_identidad'] = f"{tipo_doc} {num_doc}"
+                            
+                            print(f"Representante Legal: {resultado['representante_legal']}")
+                            print(f"Documento: {resultado['documento_identidad']}")
+                            break
+                    
+                except Exception as e:
+                    print(f"No se pudo extraer Representante Legal: {e}")
             
             return resultado
             

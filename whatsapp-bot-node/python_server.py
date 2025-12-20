@@ -21,11 +21,13 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from modules.sunat_scraper import SunatScraper
 from modules.entel_scraper import EntelScraper
 from modules.claro_cobertura_scraper import ClaroCoberturaScraper
+from modules.dni_scraper import DniScraper
 
 # Scrapers persistentes
 claro_scraper = None
 sunat_scraper = None
 entel_scraper = None
+dni_scraper = None
 
 def get_claro_scraper():
     global claro_scraper
@@ -64,7 +66,7 @@ def consultar_ruc(ruc):
     if datos:
         resultado += f"""DATOS SUNAT:
 Razon Social: {datos.get('razon_social', '---')}
-Estado: {datos.get('estado', 'ACTIVO')}
+Estado: {datos.get('estado_contribuyente', '---')}
 Representante: {datos.get('representante_legal', '---')}
 DNI: {datos.get('documento_identidad', '---')}
 Direccion: {datos.get('direccion', '---')}
@@ -78,6 +80,42 @@ Departamento: {datos.get('departamento', '---')}
     
     resultado += f"TELEFONO ENTEL: {telefono or 'Sin registro'}"
     return resultado
+
+def consultar_dni_api(dni):
+    """Consulta datos completos de una persona por DNI usando MiAPI Cloud"""
+    global dni_scraper
+    
+    dni = re.sub(r'\D', '', dni)
+    if not dni or len(dni) != 8:
+        return "Formato incorrecto\n\nUso: .dni NUMERO_DNI\nEjemplo: .dni 12345678"
+    
+    try:
+        if dni_scraper is None:
+            dni_scraper = DniScraper()
+        
+        datos = dni_scraper.consultar_dni(dni)
+        
+        if datos:
+            return f"""Consulta DNI: {dni}
+
+DATOS RENIEC:
+Nombres: {datos.get('nombres', '---')}
+Apellido Paterno: {datos.get('apellido_paterno', '---')}
+Apellido Materno: {datos.get('apellido_materno', '---')}
+Nombre Completo: {datos.get('nombre_completo', '---')}
+
+DOMICILIO:
+Dirección: {datos.get('direccion', '---')}
+Distrito: {datos.get('distrito', '---')}
+Provincia: {datos.get('provincia', '---')}
+Departamento: {datos.get('departamento', '---')}
+Ubigeo: {datos.get('ubigeo', '---')}"""
+        else:
+            return f"Consulta DNI: {dni}\n\nNo se encontraron datos para este DNI"
+            
+    except Exception as e:
+        print(f"Error DNI: {e}")
+        return f"Error consultando DNI: {str(e)}"
 
 def consultar_delivery(args):
     coords = parsear_coordenadas(args)
@@ -166,6 +204,8 @@ class CommandHandler(BaseHTTPRequestHandler):
         
         if comando == 'ruc':
             resultado = consultar_ruc(args)
+        elif comando == 'dni':
+            resultado = consultar_dni_api(args)
         elif comando == 'delivery':
             resultado = consultar_delivery(args)
         elif comando == 'internet':

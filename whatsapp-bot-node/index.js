@@ -24,7 +24,8 @@ const COMANDOS = {
     '.ayuda': 'help',
     '.delivery': 'delivery',
     '.internet': 'internet',
-    '.ruc': 'ruc'
+    '.ruc': 'ruc',
+    '.dni': 'dni'
 };
 
 // Crear cliente de WhatsApp con sesión persistente
@@ -69,6 +70,7 @@ client.on('ready', () => {
     console.log('   .delivery lat, lng  - Cobertura delivery');
     console.log('   .internet lat, lng  - Cobertura internet');
     console.log('   .ruc NUMERO         - Datos SUNAT + telefono ENTEL');
+    console.log('   .dni NUMERO         - Datos RENIEC por DNI');
     console.log('-'.repeat(50));
     console.log();
     console.log('(Ctrl+C para detener)');
@@ -102,6 +104,10 @@ async function processQueue() {
                 case 'internet':
                     await message.reply('⏳ Consultando cobertura de internet...');
                     respuesta = await llamarPythonServer('internet', args);
+                    break;
+                case 'dni':
+                    await message.reply('⏳ Consultando DNI en RENIEC...');
+                    respuesta = await llamarPythonServer('dni', args);
                     break;
             }
 
@@ -179,7 +185,10 @@ Ejemplo: .internet -12.046, -77.042
 .ruc NUMERO_RUC
 Ejemplo: .ruc 20123456789
 
-Coordenadas de Google Maps`;
+.dni NUMERO_DNI
+Ejemplo: .dni 12345678
+
+Coord. de Google Maps`;
 }
 
 // Evento: Mensaje recibido
@@ -216,8 +225,25 @@ client.on('message', async (message) => {
 });
 
 // Evento: Desconectado
-client.on('disconnected', (reason) => {
+client.on('disconnected', async (reason) => {
     console.log('❌ Cliente desconectado:', reason);
+
+    // Si fue logout, limpiar sesión para evitar errores de lockfile
+    if (reason === 'LOGOUT') {
+        console.log('🧹 Limpiando sesión anterior...');
+        const fs = require('fs');
+        const authPath = path.join(__dirname, '.wwebjs_auth');
+
+        try {
+            if (fs.existsSync(authPath)) {
+                fs.rmSync(authPath, { recursive: true, force: true });
+                console.log('✅ Sesión limpiada. Reinicia el bot para escanear QR nuevamente.');
+            }
+        } catch (e) {
+            console.log('⚠️ No se pudo limpiar sesión automáticamente.');
+            console.log('   Ejecuta manualmente: rmdir /s /q .wwebjs_auth');
+        }
+    }
 });
 
 // Iniciar cliente
