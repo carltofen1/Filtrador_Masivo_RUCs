@@ -117,15 +117,25 @@ def ejecutar_whatsapp_bot():
         return
     
     try:
-        bot_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'whatsapp-bot-node')
+        # Obtener directorio del ejecutable (funciona tanto como script como .exe)
+        if getattr(sys, 'frozen', False):
+            # Es un .exe empaquetado
+            base_path = os.path.dirname(sys.executable)
+        else:
+            # Es un script Python
+            base_path = os.path.dirname(os.path.abspath(__file__))
+        
+        bot_path = os.path.join(base_path, 'whatsapp-bot-node')
         if not os.path.exists(bot_path):
-            print("ERROR: No se encontro la carpeta whatsapp-bot-node")
+            print(f"ERROR: No se encontro la carpeta whatsapp-bot-node")
+            print(f"Buscando en: {bot_path}")
             return
         
         # Verificar si necesita npm install
         node_modules = os.path.join(bot_path, 'node_modules')
-        if not os.path.exists(node_modules):
-            print("Instalando dependencias de Node.js (primera vez)...")
+        wwebjs_exists = os.path.exists(os.path.join(node_modules, 'whatsapp-web.js'))
+        if not os.path.exists(node_modules) or not wwebjs_exists:
+            print("Instalando dependencias de Node.js (primera vez, puede tardar)...")
             subprocess.run(['npm', 'install'], cwd=bot_path, shell=True)
         
         # Iniciar servidor Python en segundo plano
