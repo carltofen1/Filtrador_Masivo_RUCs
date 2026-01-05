@@ -9,16 +9,51 @@ import shutil
 import urllib.request
 
 def verificar_nodejs():
-    """Verifica si Node.js está instalado, si no lo instala automáticamente"""
-    try:
-        result = subprocess.run(['node', '--version'], capture_output=True, shell=True)
-        if result.returncode == 0:
-            return True
-    except:
-        pass
+    """Verifica si Node.js está instalado en el sistema, si no lo instala automáticamente"""
     
-    print("\n⚠️  Node.js no está instalado.")
-    print("Descargando e instalando automáticamente...")
+    # Primero buscar Node.js en el PATH del sistema
+    node_path = shutil.which('node')
+    if node_path:
+        try:
+            result = subprocess.run(['node', '--version'], capture_output=True, text=True, shell=True)
+            if result.returncode == 0:
+                version = result.stdout.strip()
+                print(f"✅ Node.js encontrado: {version}")
+                return True
+        except:
+            pass
+    
+    # Buscar en ubicaciones comunes de Windows
+    common_paths = [
+        r"C:\Program Files\nodejs\node.exe",
+        r"C:\Program Files (x86)\nodejs\node.exe",
+        os.path.expandvars(r"%APPDATA%\npm\node.exe"),
+        os.path.expandvars(r"%LOCALAPPDATA%\Programs\nodejs\node.exe"),
+    ]
+    
+    for path in common_paths:
+        if os.path.exists(path):
+            try:
+                result = subprocess.run([path, '--version'], capture_output=True, text=True)
+                if result.returncode == 0:
+                    version = result.stdout.strip()
+                    print(f"✅ Node.js encontrado en: {path} ({version})")
+                    # Agregar al PATH temporalmente
+                    node_dir = os.path.dirname(path)
+                    if node_dir not in os.environ['PATH']:
+                        os.environ['PATH'] = node_dir + os.pathsep + os.environ['PATH']
+                    return True
+            except:
+                continue
+    
+    # Si no se encontró, ofrecer instalarlo
+    print("\n⚠️  Node.js no está instalado en el sistema.")
+    respuesta = input("¿Deseas instalarlo automáticamente? (S/N): ").strip().upper()
+    
+    if respuesta != 'S':
+        print("❌ Node.js es necesario para el bot de WhatsApp.")
+        print("Instálalo manualmente desde: https://nodejs.org")
+        return False
     
     try:
         # Descargar instalador de Node.js LTS
