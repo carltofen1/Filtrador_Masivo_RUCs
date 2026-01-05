@@ -8,6 +8,8 @@ import os
 import io
 import re
 import json
+import time
+import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import contextlib
 
@@ -28,6 +30,47 @@ claro_scraper = None
 sunat_scraper = None
 entel_scraper = None
 dni_scraper = None
+
+# Keep-alive para mantener sesión Claro activa
+KEEP_ALIVE_INTERVAL = 45 * 60  # 45 minutos en segundos
+keep_alive_thread = None
+keep_alive_running = True
+
+def keep_alive_claro():
+    """Thread que mantiene la sesión de Claro activa haciendo consultas periódicas"""
+    global claro_scraper, keep_alive_running
+    
+    # Coordenadas de prueba (centro de Lima)
+    lat_test = -12.0464
+    lng_test = -77.0428
+    
+    while keep_alive_running:
+        time.sleep(KEEP_ALIVE_INTERVAL)
+        
+        if not keep_alive_running:
+            break
+            
+        if claro_scraper is not None:
+            try:
+                print(f"[Keep-Alive] Manteniendo sesión Claro activa...")
+                # Hacer una consulta dummy para mantener la sesión
+                claro_scraper.consultar_internet(lat_test, lng_test)
+                print(f"[Keep-Alive] Sesión Claro OK - Próximo refresh en {KEEP_ALIVE_INTERVAL // 60} min")
+            except Exception as e:
+                print(f"[Keep-Alive] Error, reintentando login: {str(e)[:50]}")
+                try:
+                    # Reintentar login si falló
+                    claro_scraper.login()
+                    print("[Keep-Alive] Re-login exitoso")
+                except Exception as e2:
+                    print(f"[Keep-Alive] Error en re-login: {str(e2)[:50]}")
+
+def start_keep_alive():
+    """Inicia el thread de keep-alive"""
+    global keep_alive_thread
+    keep_alive_thread = threading.Thread(target=keep_alive_claro, daemon=True)
+    keep_alive_thread.start()
+    print(f"[Keep-Alive] Iniciado - Refresh cada {KEEP_ALIVE_INTERVAL // 60} minutos")
 
 def get_claro_scraper():
     global claro_scraper
@@ -82,7 +125,7 @@ Departamento: {datos.get('departamento', '---')}
     return resultado
 
 def consultar_dni_api(dni):
-    """Consulta datos completos de una persona por DNI usando MiAPI Cloud"""
+    """Consulta datos completos de una persona por DNI combinando MiAPI Cloud + PERUDEVS"""
     global dni_scraper
     
     dni = re.sub(r'\D', '', dni)
@@ -96,15 +139,19 @@ def consultar_dni_api(dni):
         datos = dni_scraper.consultar_dni(dni)
         
         if datos:
-            return f"""Consulta DNI: {dni}
+            edad = datos.get('edad', 0)
+            edad_str = f"{edad} años" if edad > 0 else "---"
+            
+            return f"""📋 Consulta DNI: {dni}
 
-DATOS RENIEC:
-Nombres: {datos.get('nombres', '---')}
-Apellido Paterno: {datos.get('apellido_paterno', '---')}
-Apellido Materno: {datos.get('apellido_materno', '---')}
-Nombre Completo: {datos.get('nombre_completo', '---')}
+👤 DATOS PERSONALES:
+Nombre: {datos.get('nombre_completo', '---')}
+Fecha Nacimiento: {datos.get('fecha_nacimiento', '---')}
+Edad: {edad_str}
+Género: {datos.get('genero', '---')}
+Código Verificación: {datos.get('codigo_verificacion', '---')}
 
-DOMICILIO:
+📍 DOMICILIO:
 Dirección: {datos.get('direccion', '---')}
 Distrito: {datos.get('distrito', '---')}
 Provincia: {datos.get('provincia', '---')}
@@ -116,6 +163,7 @@ Ubigeo: {datos.get('ubigeo', '---')}"""
     except Exception as e:
         print(f"Error DNI: {e}")
         return f"Error consultando DNI: {str(e)}"
+
 
 def consultar_delivery(args):
     coords = parsear_coordenadas(args)
@@ -229,6 +277,10 @@ if __name__ == '__main__':
     # Pre-iniciar scrapers
     print("Inicializando scrapers...")
     get_claro_scraper()
+    
+    # Iniciar keep-alive para mantener sesión Claro activa
+    start_keep_alive()
+    
     print()
     print("Servidor listo! Esperando comandos...")
     print()
@@ -238,6 +290,7 @@ if __name__ == '__main__':
         server.serve_forever()
     except KeyboardInterrupt:
         print("\nCerrando servidor...")
+        keep_alive_running = False
         if claro_scraper:
             claro_scraper.close()
         if sunat_scraper:

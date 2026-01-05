@@ -38,7 +38,20 @@ class SheetsManager:
                 
                 # Validar: debe ser exactamente 11 dígitos
                 if ruc and len(ruc) == 11:
-                    if not estado or estado == 'PENDIENTE':
+                    # Estados de SUNAT que indican que ya fue procesado
+                    estados_sunat_procesados = [
+                        'ACTIVO', 'ACTIVA', 
+                        'BAJA DE OFICIO', 'BAJA DEFINITIVA', 'BAJA PROVISIONAL',
+                        'SUSPENSIÓN TEMPORAL', 'SUSPENSION TEMPORAL',
+                        'NO HABIDO', 'NO HALLADO',
+                        'ERROR - SUNAT', 'ERROR', 'SIN REGISTRO',
+                        'DESCONOCIDO'
+                    ]
+                    
+                    # Solo saltar si tiene un estado SUNAT válido (no "OK" de Entel)
+                    ya_procesado = any(estado.startswith(e) or estado == e for e in estados_sunat_procesados)
+                    
+                    if not ya_procesado:
                         rucs.append({
                             'ruc': ruc,
                             'row': idx,

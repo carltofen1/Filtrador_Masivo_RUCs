@@ -4,11 +4,14 @@ from dotenv import load_dotenv
 
 def get_resource_path(relative_path):
     """Obtiene la ruta correcta para archivos bundled con PyInstaller"""
-    if hasattr(sys, '_MEIPASS'):
+    if getattr(sys, 'frozen', False):
         # Ejecutando como ejecutable PyInstaller
-        return os.path.join(sys._MEIPASS, relative_path)
-    # Ejecutando como script normal
-    return os.path.join(os.path.dirname(os.path.abspath(__file__)), relative_path)
+        # Los archivos están junto al .exe, no dentro del bundle temporal
+        base_path = os.path.dirname(sys.executable)
+    else:
+        # Ejecutando como script normal
+        base_path = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(base_path, relative_path)
 
 # Cargar .env desde la ubicación correcta
 env_path = get_resource_path('.env')

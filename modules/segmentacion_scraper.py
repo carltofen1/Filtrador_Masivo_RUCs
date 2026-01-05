@@ -74,7 +74,7 @@ class SegmentacionScraper:
     
     def buscar_tipo_cliente(self, ruc, intento=1):
         """Busca un RUC y extrae el PE Tipo de Cliente - Tiempos inteligentes con reintentos"""
-        MAX_INTENTOS = 2
+        MAX_INTENTOS = 3  # Aumentado de 2 a 3 para mayor robustez
         
         try:
             if not self.logged_in:
@@ -113,13 +113,35 @@ class SegmentacionScraper:
                 )
                 cliente_link.click()
                 
-                # Esperar que aparezca PE Tipo de Cliente en la página
-                WebDriverWait(self.driver, 12).until(
-                    lambda d: "PE Tipo de Cliente" in d.page_source
-                )
+                # ESPERA INTELIGENTE: Verificar que el VALOR del segmento ya cargó
+                # No solo el label, sino el valor real (PYME, Mayores, etc.)
+                segmentos_conocidos = ['PYME', 'Mayores', 'SOHO', 'Corporativo', 'Gobierno', 'Micro']
+                valor_encontrado = None
                 
-                # Espera extra para que el valor se renderice (crítico para Salesforce)
-                time.sleep(1.5)
+                for _ in range(15):  # Máximo 15 intentos (15 segundos)
+                    time.sleep(1)
+                    html = self.driver.page_source
+                    
+                    # Verificar si ya cargó un valor de segmento conocido
+                    for segmento in segmentos_conocidos:
+                        if f'>{segmento}<' in html or f'>{segmento.upper()}<' in html:
+                            valor_encontrado = segmento
+                            break
+                    
+                    if valor_encontrado:
+                        break
+                    
+                    # También verificar con patrón regex por si el formato es diferente
+                    pattern = r'PE Tipo de Cliente.{0,500}<lightning-formatted-text[^>]*>([^<]+)</lightning-formatted-text>'
+                    match = re.search(pattern, html, re.DOTALL)
+                    if match and match.group(1).strip():
+                        valor_encontrado = match.group(1).strip()
+                        break
+                
+                # Si encontró valor en la espera inteligente, retornarlo directamente
+                if valor_encontrado:
+                    self._volver_inicio()
+                    return valor_encontrado
                 
             except:
                 if intento < MAX_INTENTOS:
@@ -131,7 +153,7 @@ class SegmentacionScraper:
             # Extraer valor con múltiples patrones
             html = self.driver.page_source
             
-            # Patrón 1: Específico
+            # Patrón 1: Específico con span
             pattern1 = r'>PE Tipo de Cliente</span>.*?<lightning-formatted-text[^>]*>([^<]+)</lightning-formatted-text>'
             match = re.search(pattern1, html, re.DOTALL)
             if match and match.group(1).strip():
@@ -139,9 +161,35 @@ class SegmentacionScraper:
                 self._volver_inicio()
                 return valor
             
-            # Patrón 2: Flexible
-            pattern2 = r'PE Tipo de Cliente.{0,500}<lightning-formatted-text[^>]*>([^<]+)</lightning-formatted-text>'
+            # Patrón 2: Flexible con distancia mayor
+            pattern2 = r'PE Tipo de Cliente.{0,800}<lightning-formatted-text[^>]*>([^<]+)</lightning-formatted-text>'
             match = re.search(pattern2, html, re.DOTALL)
+            if match and match.group(1).strip():
+                valor = match.group(1).strip()
+                self._volver_inicio()
+                return valor
+            
+            # Patrón 3: Buscar directamente valores conocidos de segmento cerca del label
+            segmentos_conocidos = ['PYME', 'MAYOR', 'MAYORES', 'SOHO', 'CORPORATIVO', 'GOBIERNO', 'MICRO']
+            for segmento in segmentos_conocidos:
+                pattern3 = rf'PE Tipo de Cliente.{{0,300}}>({segmento})<'
+                match = re.search(pattern3, html, re.DOTALL | re.IGNORECASE)
+                if match:
+                    valor = match.group(1).strip().upper()
+                    self._volver_inicio()
+                    return valor
+            
+            # Patrón 4: Buscar en data-value o value attribute
+            pattern4 = r'PE.?Tipo.?de.?Cliente.*?(?:data-value|value)=["\']([^"\']+)["\']'
+            match = re.search(pattern4, html, re.DOTALL | re.IGNORECASE)
+            if match and match.group(1).strip():
+                valor = match.group(1).strip()
+                self._volver_inicio()
+                return valor
+            
+            # Patrón 5: Buscar en cualquier elemento después del label
+            pattern5 = r'PE Tipo de Cliente</span>\s*</dt>\s*<dd[^>]*>.*?>([^<]+)<'
+            match = re.search(pattern5, html, re.DOTALL)
             if match and match.group(1).strip():
                 valor = match.group(1).strip()
                 self._volver_inicio()

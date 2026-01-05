@@ -75,8 +75,8 @@ Ejemplo: .internet -12.046, -77.042`;
 
         await delay(2000);
 
-        // Ingresar coordenadas
-        await page.type('#input_lat_lon', `${coords.lat}, ${coords.lng}`);
+        // Ingresar coordenadas (usar espacio, no coma)
+        await page.type('#input_lat_lon', `${coords.lat} ${coords.lng}`);
 
         // Buscar
         const btnBuscar = await page.$x("//button[contains(text(), 'Buscar')]");
