@@ -11,7 +11,25 @@ import urllib.request
 def verificar_nodejs():
     """Verifica si Node.js está instalado en el sistema, si no lo instala automáticamente"""
     
-    # Primero buscar Node.js en el PATH del sistema
+    # Ruta donde se instala Node.js por defecto
+    node_global_path = r"C:\Program Files\nodejs"
+    node_exe = os.path.join(node_global_path, "node.exe")
+    
+    # 1. Verificar si Node.js ya está instalado globalmente
+    if os.path.exists(node_exe):
+        try:
+            result = subprocess.run([node_exe, '--version'], capture_output=True, text=True)
+            if result.returncode == 0:
+                version = result.stdout.strip()
+                print(f"✅ Node.js encontrado: {version}")
+                # Asegurar que está en el PATH
+                if node_global_path not in os.environ['PATH']:
+                    os.environ['PATH'] = node_global_path + os.pathsep + os.environ['PATH']
+                return True
+        except:
+            pass
+    
+    # 2. Buscar en el PATH del sistema
     node_path = shutil.which('node')
     if node_path:
         try:
@@ -23,11 +41,9 @@ def verificar_nodejs():
         except:
             pass
     
-    # Buscar en ubicaciones comunes de Windows
+    # 3. Buscar en otras ubicaciones comunes
     common_paths = [
-        r"C:\Program Files\nodejs\node.exe",
         r"C:\Program Files (x86)\nodejs\node.exe",
-        os.path.expandvars(r"%APPDATA%\npm\node.exe"),
         os.path.expandvars(r"%LOCALAPPDATA%\Programs\nodejs\node.exe"),
     ]
     
@@ -38,7 +54,6 @@ def verificar_nodejs():
                 if result.returncode == 0:
                     version = result.stdout.strip()
                     print(f"✅ Node.js encontrado en: {path} ({version})")
-                    # Agregar al PATH temporalmente
                     node_dir = os.path.dirname(path)
                     if node_dir not in os.environ['PATH']:
                         os.environ['PATH'] = node_dir + os.pathsep + os.environ['PATH']
@@ -46,7 +61,7 @@ def verificar_nodejs():
             except:
                 continue
     
-    # Si no se encontró, ofrecer instalarlo
+    # 4. No se encontró - ofrecer instalarlo
     print("\n⚠️  Node.js no está instalado en el sistema.")
     respuesta = input("¿Deseas instalarlo automáticamente? (S/N): ").strip().upper()
     
@@ -63,12 +78,22 @@ def verificar_nodejs():
         print("Descargando Node.js (25 MB)...")
         urllib.request.urlretrieve(url, installer)
         
-        print("Instalando Node.js (puede tomar 1 minuto)...")
-        subprocess.run(['msiexec', '/i', installer, '/qn'], shell=True, check=True)
+        print("Instalando Node.js globalmente (puede tomar 1 minuto)...")
+        # Instalar con permisos de admin si es necesario
+        subprocess.run(['msiexec', '/i', installer, '/qn', '/norestart'], shell=True, check=True)
         
         os.remove(installer)
-        print("✅ Node.js instalado correctamente!")
-        return True
+        
+        # IMPORTANTE: Agregar Node al PATH del proceso actual
+        if os.path.exists(node_global_path):
+            os.environ['PATH'] = node_global_path + os.pathsep + os.environ['PATH']
+            print("✅ Node.js instalado correctamente!")
+            print(f"   Ubicación: {node_global_path}")
+            return True
+        else:
+            print("⚠️  La instalación parece haber fallado.")
+            print("   Intenta reiniciar el programa o instalar Node.js manualmente.")
+            return False
         
     except Exception as e:
         print(f"❌ Error instalando Node.js: {e}")

@@ -34,18 +34,21 @@ def procesar_worker(worker_id, rucs_asignados, sheets):
                     with sheets_lock:
                         global_updates.append({
                             'row': row,
-                            'data': [row - 1, ruc, '', '', '', '', '', '', '', '', 'Error - SUNAT']
+                            'data_ad': [row - 1, ruc, '', ''],  # A:D (sin tocar E=Teléfonos)
+                            'data_fk': ['', '', '', '', '', 'Error - SUNAT']  # F:K
                         })
                     errors += 1
                 else:
                     estado_final = sunat_data.get('estado_contribuyente', 'DESCONOCIDO')
                     
-                    row_data = [
+                    # DATOS SEPARADOS: A:D y F:K (NUNCA tocar E=Teléfonos)
+                    data_ad = [
                         row - 1,
                         ruc,
                         sunat_data.get('razon_social', ''),
-                        sunat_data.get('representante_legal', ''),
-                        '',
+                        sunat_data.get('representante_legal', '')
+                    ]
+                    data_fk = [
                         sunat_data.get('documento_identidad', ''),
                         sunat_data.get('departamento', ''),
                         sunat_data.get('provincia', ''),
@@ -55,7 +58,7 @@ def procesar_worker(worker_id, rucs_asignados, sheets):
                     ]
                     
                     with sheets_lock:
-                        global_updates.append({'row': row, 'data': row_data})
+                        global_updates.append({'row': row, 'data_ad': data_ad, 'data_fk': data_fk})
                     
                     processed += 1
                 
@@ -72,7 +75,8 @@ def procesar_worker(worker_id, rucs_asignados, sheets):
                 with sheets_lock:
                     global_updates.append({
                         'row': row,
-                        'data': [row - 1, ruc, '', '', '', '', '', '', '', '', f'Error: {str(e)[:30]}']
+                        'data_ad': [row - 1, ruc, '', ''],
+                        'data_fk': ['', '', '', '', '', f'Error: {str(e)[:30]}']
                     })
                 errors += 1
         

@@ -11,6 +11,38 @@ from selenium.webdriver.chrome.options import Options
 import time
 import re
 import config
+import os
+from datetime import datetime
+
+# Archivo de log para debug
+LOG_FILE = os.path.join(os.path.dirname(__file__), '..', 'segmentacion_debug.log')
+
+# Contadores globales de errores (para resumen)
+ERROR_STATS = {
+    'timeout': 0,
+    'no_existe': 0,
+    'error_click': 0,
+    'patron_no_encontrado': 0,
+    'exito': 0
+}
+
+def log_debug(mensaje, tipo_error=None):
+    """Escribe mensaje de debug al archivo log y actualiza contadores"""
+    global ERROR_STATS
+    if tipo_error and tipo_error in ERROR_STATS:
+        ERROR_STATS[tipo_error] += 1
+    with open(LOG_FILE, 'a', encoding='utf-8') as f:
+        f.write(f"{datetime.now().strftime('%H:%M:%S')} - {mensaje}\n")
+
+def get_error_stats():
+    """Retorna las estadísticas de errores"""
+    return ERROR_STATS.copy()
+
+def reset_error_stats():
+    """Resetea los contadores de errores"""
+    global ERROR_STATS
+    for key in ERROR_STATS:
+        ERROR_STATS[key] = 0
 
 class SegmentacionScraper:
     def __init__(self, headless=False):  # DESACTIVADO - Salesforce no funciona bien en headless
@@ -35,7 +67,7 @@ class SegmentacionScraper:
         options.add_experimental_option('useAutomationExtension', False)
         
         self.driver = webdriver.Chrome(options=options)
-        self.wait = WebDriverWait(self.driver, 15)
+        self.wait = WebDriverWait(self.driver, 8)  # Reducido de 15 a 8 segundos
         self.logged_in = False
     
     def login(self):
@@ -73,154 +105,128 @@ class SegmentacionScraper:
             return False
     
     def buscar_tipo_cliente(self, ruc, intento=1):
-        """Busca un RUC y extrae el PE Tipo de Cliente - Tiempos inteligentes con reintentos"""
-        MAX_INTENTOS = 3  # Aumentado de 2 a 3 para mayor robustez
+        """
+        VERSIÓN OPTIMIZADA - Busca RUC y extrae segmento de forma rápida.
+        Solo marca "Sin Segmento" si aparece el mensaje explícito de no encontrado.
+        """
+        MAX_INTENTOS = 2  # Reducido para velocidad
         
         try:
             if not self.logged_in:
                 return None
             
-            # Esperar buscador (tiempo máximo, sale antes si aparece)
+            # Obtener buscador (ya debería estar disponible)
             search_input = self.wait.until(
                 EC.presence_of_element_located((By.CSS_SELECTOR, "input[placeholder='Search...']"))
             )
             
-            search_input.clear()
+            # Limpiar y escribir RUC - SIN ESPERAS INNECESARIAS
+            search_input.send_keys(Keys.CONTROL + "a")
+            search_input.send_keys(Keys.DELETE)
             search_input.send_keys(ruc)
             search_input.send_keys(Keys.RETURN)
             
-            # Esperar inteligente: sale inmediatamente cuando aparece resultado O no encontrado
-            try:
-                WebDriverWait(self.driver, 10).until(
-                    lambda d: "No se han encontrado resultados" in d.page_source or 
-                              d.find_elements(By.CSS_SELECTOR, "a.outputLookupLink")
-                )
-            except:
-                if intento < MAX_INTENTOS:
-                    self.driver.get("https://transforma.my.site.com/s/")
-                    time.sleep(1)
-                    return self.buscar_tipo_cliente(ruc, intento + 1)
-                return "Sin Segmento"
+            # Esperar a que cargue (tiempo mínimo necesario)
+            time.sleep(0.6)
             
-            # No hay resultados = cliente no existe en Salesforce (respuesta rápida)
-            if "No se han encontrado resultados" in self.driver.page_source:
-                return "Sin Segmento"
-            
-            # Click en el cliente
+            # ESTRATEGIA RÁPIDA: Buscar el link del cliente
             try:
-                cliente_link = WebDriverWait(self.driver, 5).until(
+                cliente_link = WebDriverWait(self.driver, 4).until(
                     EC.element_to_be_clickable((By.CSS_SELECTOR, "a.outputLookupLink"))
                 )
+                # ¡ENCONTRADO! Click inmediato
                 cliente_link.click()
                 
-                # ESPERA INTELIGENTE: Verificar que el VALOR del segmento ya cargó
-                # No solo el label, sino el valor real (PYME, Mayores, etc.)
-                segmentos_conocidos = ['PYME', 'Mayores', 'SOHO', 'Corporativo', 'Gobierno', 'Micro']
-                valor_encontrado = None
-                
-                for _ in range(15):  # Máximo 15 intentos (15 segundos)
-                    time.sleep(1)
-                    html = self.driver.page_source
-                    
-                    # Verificar si ya cargó un valor de segmento conocido
-                    for segmento in segmentos_conocidos:
-                        if f'>{segmento}<' in html or f'>{segmento.upper()}<' in html:
-                            valor_encontrado = segmento
-                            break
-                    
-                    if valor_encontrado:
-                        break
-                    
-                    # También verificar con patrón regex por si el formato es diferente
-                    pattern = r'PE Tipo de Cliente.{0,500}<lightning-formatted-text[^>]*>([^<]+)</lightning-formatted-text>'
-                    match = re.search(pattern, html, re.DOTALL)
-                    if match and match.group(1).strip():
-                        valor_encontrado = match.group(1).strip()
-                        break
-                
-                # Si encontró valor en la espera inteligente, retornarlo directamente
-                if valor_encontrado:
-                    self._volver_inicio()
-                    return valor_encontrado
-                
             except:
+                # No apareció link - verificar si es "no encontrado"
+                if "No se han encontrado resultados" in self.driver.page_source:
+                    # ESPERAR 0.75s y verificar que el mensaje SIGUE AHÍ (es fijo, no transitorio)
+                    time.sleep(0.75)
+                    if "No se han encontrado resultados" in self.driver.page_source:
+                        log_debug(f"{ruc} - Sin Segmento (confirmado estable)", 'no_existe')
+                        return "Sin Segmento"
+                    # El mensaje desapareció = era transitorio, reintentar
+                
+                # No hay mensaje o era transitorio - reintentar si quedan intentos
                 if intento < MAX_INTENTOS:
-                    self.driver.get("https://transforma.my.site.com/s/")
-                    time.sleep(1)
+                    self._volver_inicio_rapido()
                     return self.buscar_tipo_cliente(ruc, intento + 1)
-                return "Sin Segmento"
+                
+                log_debug(f"{ruc} - TIMEOUT sin resultado claro", 'timeout')
+                return "ERROR_DESCONOCIDO"
             
-            # Extraer valor con múltiples patrones
-            html = self.driver.page_source
+            # Click exitoso - EXTRAER SEGMENTO RÁPIDO
+            # Esperar que cargue la página del cliente
+            time.sleep(0.8)
             
-            # Patrón 1: Específico con span
-            pattern1 = r'>PE Tipo de Cliente</span>.*?<lightning-formatted-text[^>]*>([^<]+)</lightning-formatted-text>'
-            match = re.search(pattern1, html, re.DOTALL)
-            if match and match.group(1).strip():
-                valor = match.group(1).strip()
-                self._volver_inicio()
-                return valor
-            
-            # Patrón 2: Flexible con distancia mayor
-            pattern2 = r'PE Tipo de Cliente.{0,800}<lightning-formatted-text[^>]*>([^<]+)</lightning-formatted-text>'
-            match = re.search(pattern2, html, re.DOTALL)
-            if match and match.group(1).strip():
-                valor = match.group(1).strip()
-                self._volver_inicio()
-                return valor
-            
-            # Patrón 3: Buscar directamente valores conocidos de segmento cerca del label
-            segmentos_conocidos = ['PYME', 'MAYOR', 'MAYORES', 'SOHO', 'CORPORATIVO', 'GOBIERNO', 'MICRO']
-            for segmento in segmentos_conocidos:
-                pattern3 = rf'PE Tipo de Cliente.{{0,300}}>({segmento})<'
-                match = re.search(pattern3, html, re.DOTALL | re.IGNORECASE)
+            # Loop rápido para extraer el segmento (máximo 2 segundos)
+            for _ in range(4):
+                html = self.driver.page_source
+                
+                # PATRÓN ÚNICO OPTIMIZADO: Buscar PE Tipo de Cliente
+                match = re.search(
+                    r'PE.?Tipo.?de.?Cliente.{0,500}?<lightning-formatted-text[^>]*>([^<]+)</lightning-formatted-text>',
+                    html, re.DOTALL | re.IGNORECASE
+                )
                 if match:
-                    valor = match.group(1).strip().upper()
-                    self._volver_inicio()
-                    return valor
+                    valor = match.group(1).strip()
+                    if valor and len(valor) > 1:
+                        log_debug(f"{ruc} - OK: {valor}", 'exito')
+                        self._volver_inicio_rapido()
+                        return valor
+                
+                # Patrón alternativo: data-value
+                match2 = re.search(
+                    r'PE.?Tipo.?de.?Cliente.*?data-value=["\']([^"\']+)["\']',
+                    html, re.DOTALL | re.IGNORECASE
+                )
+                if match2:
+                    valor = match2.group(1).strip()
+                    if valor and len(valor) > 1:
+                        log_debug(f"{ruc} - OK: {valor}", 'exito')
+                        self._volver_inicio_rapido()
+                        return valor
+                
+                time.sleep(0.5)
             
-            # Patrón 4: Buscar en data-value o value attribute
-            pattern4 = r'PE.?Tipo.?de.?Cliente.*?(?:data-value|value)=["\']([^"\']+)["\']'
-            match = re.search(pattern4, html, re.DOTALL | re.IGNORECASE)
-            if match and match.group(1).strip():
-                valor = match.group(1).strip()
-                self._volver_inicio()
-                return valor
-            
-            # Patrón 5: Buscar en cualquier elemento después del label
-            pattern5 = r'PE Tipo de Cliente</span>\s*</dt>\s*<dd[^>]*>.*?>([^<]+)<'
-            match = re.search(pattern5, html, re.DOTALL)
-            if match and match.group(1).strip():
-                valor = match.group(1).strip()
-                self._volver_inicio()
-                return valor
-            
-            # No encontró valor - reintentar (puede ser que no cargó bien)
+            # No encontró segmento - reintentar o marcar error
             if intento < MAX_INTENTOS:
-                self.driver.get("https://transforma.my.site.com/s/")
-                time.sleep(1)
+                self._volver_inicio_rapido()
                 return self.buscar_tipo_cliente(ruc, intento + 1)
             
-            self._volver_inicio()
+            self._volver_inicio_rapido()
+            log_debug(f"{ruc} - Patrón no encontrado", 'patron_no_encontrado')
             return "Sin Datos"
             
         except Exception as e:
-            print(f"Error RUC {ruc}: {str(e)[:30]}")
             if intento < MAX_INTENTOS:
                 try:
-                    self.driver.get("https://transforma.my.site.com/s/")
-                    time.sleep(1)
+                    self._volver_inicio_rapido()
                     return self.buscar_tipo_cliente(ruc, intento + 1)
                 except:
                     pass
-            return None
+            return "ERROR_EXCEPCION"
+    
+    def _volver_inicio_rapido(self):
+        """Vuelve al inicio ULTRA RÁPIDO"""
+        try:
+            # Presionar Escape para cerrar cualquier modal y luego buscar el logo
+            self.driver.find_element(By.TAG_NAME, 'body').send_keys(Keys.ESCAPE)
+            logo = self.driver.find_element(By.CSS_SELECTOR, "a.siteforceContentLogo, .slds-global-header__logo, a[href='/s/']")
+            logo.click()
+            time.sleep(0.3)
+            return
+        except:
+            pass
+        # Fallback: navegación directa
+        self.driver.get("https://transforma.my.site.com/s/")
+        time.sleep(0.3)
     
     def _volver_inicio(self):
         """Vuelve al inicio de forma inteligente"""
-        self.driver.get("https://transforma.my.site.com/s/")
-        # Esperar que cargue el buscador (máx 3s, sale antes si aparece)
+        self._volver_inicio_rapido()
         try:
-            WebDriverWait(self.driver, 3).until(
+            WebDriverWait(self.driver, 2).until(
                 EC.presence_of_element_located((By.CSS_SELECTOR, "input[placeholder='Search...']"))
             )
         except:
