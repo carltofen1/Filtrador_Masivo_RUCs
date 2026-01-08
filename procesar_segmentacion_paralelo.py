@@ -1,6 +1,6 @@
 import time
 from modules.sheets_manager import SheetsManager
-from modules.segmentacion_scraper import SegmentacionScraper
+from modules.segmentacion_scraper import SegmentacionScraper, get_error_stats, reset_error_stats
 import config
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Lock
@@ -34,14 +34,15 @@ def procesar_worker(worker_id, rucs_asignados, sheets):
                 tipo_cliente = segmentacion.buscar_tipo_cliente(ruc)
                 
                 # Mostrar resultado
-                print(f"[W{worker_id}] {idx}/{len(rucs_asignados)}: {ruc} => {tipo_cliente or 'Sin Segmento'}")
+                resultado = tipo_cliente if tipo_cliente else "ERROR_REVISION"
+                print(f"[W{worker_id}] {idx}/{len(rucs_asignados)}: {ruc} => {resultado}")
                 
                 with sheets_lock:
-                    if tipo_cliente and tipo_cliente not in ['Sin Segmento', 'Sin Datos']:
+                    if tipo_cliente and tipo_cliente not in ['Sin Segmento', 'Sin Datos', 'ERROR_DESCONOCIDO', 'ERROR_REVISION']:
                         found += 1
                     global_updates.append({
                         'row': row, 
-                        'segmento': tipo_cliente or 'Sin Segmento'
+                        'segmento': resultado
                     })
                 
                 processed += 1
@@ -59,6 +60,11 @@ def procesar_worker(worker_id, rucs_asignados, sheets):
                             })
                         sheets.worksheet.batch_update(batch_data)
                         global_updates = []
+                        
+                        # MOSTRAR STATS DE ERRORES EN TIEMPO REAL
+                        stats = get_error_stats()
+                        print(f">>> STATS: Exitos={stats['exito']} | NoExiste={stats['no_existe']} | Timeout={stats['timeout']} | ErrorClick={stats['error_click']} | PatronNoEnc={stats['patron_no_encontrado']}")
+                        
                         time.sleep(1)
                 
             except Exception as e:
@@ -77,7 +83,7 @@ def procesar_worker(worker_id, rucs_asignados, sheets):
 
 def main():
     print("=" * 60)
-    print("PROCESADOR DE SEGMENTACION - MODO PARALELO (5 WORKERS)")
+    print("PROCESADOR DE SEGMENTACION - MODO TURBO (6 WORKERS)")
     print("=" * 60)
     
     print("\nConectando a Google Sheets...")
@@ -129,7 +135,7 @@ def main():
             print(f"  Worker {i}: {len(workers_rucs[i])} RUCs")
         
         print("\n" + "=" * 60)
-        print("EJECUTANDO EN MODO HEADLESS (5 workers en segundo plano)")
+        print("EJECUTANDO CON 5 WORKERS EN PARALELO")
         print("=" * 60)
         input("\nPresiona ENTER para comenzar...")
         
@@ -142,7 +148,7 @@ def main():
                 if workers_rucs[worker_id]:
                     future = executor.submit(procesar_worker, worker_id, workers_rucs[worker_id], sheets)
                     futures.append(future)
-                    time.sleep(3)  # Delay entre cada worker
+                    time.sleep(1)  # Delay reducido entre workers
             
             results = []
             for future in as_completed(futures):

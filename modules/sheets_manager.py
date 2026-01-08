@@ -66,17 +66,34 @@ class SheetsManager:
             return []
     
     def update_row_batch(self, updates: List[Dict[str, Any]]):
+        """
+        Actualiza filas en batch. 
+        IMPORTANTE: Usa rangos separados A:D y F:K para NUNCA sobrescribir columna E (Teléfonos).
+        """
         try:
             batch_data = []
             for update in updates:
                 row = update['row']
-                data = update['data']
                 
-                range_name = f'A{row}:K{row}'
-                batch_data.append({
-                    'range': range_name,
-                    'values': [data]
-                })
+                # NUEVO FORMATO: data_ad y data_fk (separados para preservar Teléfonos)
+                if 'data_ad' in update and 'data_fk' in update:
+                    # Rango A:D (ID, RUC, Razón Social, Representante)
+                    batch_data.append({
+                        'range': f'A{row}:D{row}',
+                        'values': [update['data_ad']]
+                    })
+                    # Rango F:K (Doc Identidad, Depto, Prov, Distrito, Dirección, Estado)
+                    batch_data.append({
+                        'range': f'F{row}:K{row}',
+                        'values': [update['data_fk']]
+                    })
+                # FORMATO LEGACY (compatibilidad hacia atrás, pero ya no debería usarse)
+                elif 'data' in update:
+                    data = update['data']
+                    batch_data.append({
+                        'range': f'A{row}:K{row}',
+                        'values': [data]
+                    })
             
             self.worksheet.batch_update(batch_data)
             print(f"Actualizadas {len(updates)} filas en batch")

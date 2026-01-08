@@ -12,7 +12,8 @@ def save_updates_to_sheets(worker_sheets, updates, worker_id, max_retries=3):
     """
     Guarda un batch de actualizaciones con reintentos.
     Cada worker usa su propia conexión a Sheets.
-    FIX: Guarda E:L como un rango CONTINUO para garantizar atomicidad.
+    FIX DEFINITIVO: Solo escribe E (Teléfono) y L (Estado Entel) individualmente.
+    NUNCA toca las columnas F-K (datos de SUNAT).
     """
     for attempt in range(max_retries):
         try:
@@ -22,15 +23,16 @@ def save_updates_to_sheets(worker_sheets, updates, worker_id, max_retries=3):
                 telefono = update['telefono']
                 estado = update['estado']
                 
-                # FIX: Guardar E:L como rango continuo (E, F, G, H, I, J, K, L)
-                # E=telefono, F-K=no modificar (vacío), L=estado
-                # Usamos un solo rango E:L con valores para todas las columnas
-                # Columnas: E(tel), F, G, H, I, J, K, L(estado) = 8 columnas
-                row_values = [telefono, None, None, None, None, None, None, estado]
-                
+                # SOLO escribir columnas específicas, NUNCA rangos continuos
+                # Columna E = Teléfono
                 batch_data.append({
-                    'range': f"E{row}:L{row}", 
-                    'values': [row_values]
+                    'range': f"E{row}", 
+                    'values': [[telefono]]
+                })
+                # Columna L = Estado Entel
+                batch_data.append({
+                    'range': f"L{row}", 
+                    'values': [[estado]]
                 })
             
             # Usar value_input_option RAW para evitar interpretación
@@ -45,7 +47,7 @@ def save_updates_to_sheets(worker_sheets, updates, worker_id, max_retries=3):
             if attempt < max_retries - 1:
                 time.sleep(5)  # Más delay entre reintentos
             else:
-                # Fallback: guardar uno por uno con rango E:L
+                # Fallback: guardar uno por uno
                 with print_lock:
                     print(f"    [W{worker_id}] Guardando uno por uno...")
                 saved = 0
@@ -55,9 +57,9 @@ def save_updates_to_sheets(worker_sheets, updates, worker_id, max_retries=3):
                         estado = update['estado']
                         row = update['row']
                         
-                        # Guardar E:L como un solo rango
-                        row_values = [[telefono, None, None, None, None, None, None, estado]]
-                        worker_sheets.worksheet.update(f"E{row}:L{row}", row_values, value_input_option='RAW')
+                        # Solo escribir E y L individualmente
+                        worker_sheets.worksheet.update(f"E{row}", [[telefono]], value_input_option='RAW')
+                        worker_sheets.worksheet.update(f"L{row}", [[estado]], value_input_option='RAW')
                         saved += 1
                         time.sleep(0.5)  # Más delay
                     except Exception as ex:
@@ -67,6 +69,7 @@ def save_updates_to_sheets(worker_sheets, updates, worker_id, max_retries=3):
                     print(f"    [W{worker_id}] Guardados {saved}/{len(updates)} uno por uno")
                 return saved > 0
     return False
+
 
 def procesar_worker(worker_id, rucs_asignados):
     """
