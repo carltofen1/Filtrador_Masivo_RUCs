@@ -69,6 +69,12 @@ class SegmentacionScraper:
         self.driver = webdriver.Chrome(options=options)
         self.wait = WebDriverWait(self.driver, 8)  # Reducido de 15 a 8 segundos
         self.logged_in = False
+        
+        # NUEVO: Contadores para recuperación automática
+        self.errores_consecutivos = 0
+        self.rucs_desde_ultimo_refresh = 0
+        self.MAX_ERRORES_ANTES_REFRESH = 3  # Después de 3 errores seguidos, hacer refresh
+        self.RUCS_ANTES_REFRESH = 200  # Hacer refresh preventivo cada 200 RUCs
     
     def login(self):
         """Inicia sesión en el portal de Segmentación"""
@@ -104,6 +110,81 @@ class SegmentacionScraper:
             print(f"Error en login de Segmentación: {str(e)}")
             return False
     
+    def refresh_session(self):
+        """
+        Refresca la sesión haciendo F5 y verificando que el buscador siga disponible.
+        Si falla, hace re-login completo.
+        """
+        try:
+            log_debug("Refrescando sesión (F5)...")
+            self.driver.refresh()  # F5
+            time.sleep(2)
+            
+            # Verificar si el buscador sigue disponible
+            try:
+                self.wait.until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, "input[placeholder='Search...']"))
+                )
+                log_debug("Refresh exitoso - sesión válida")
+                self.errores_consecutivos = 0
+                self.rucs_desde_ultimo_refresh = 0
+                return True
+            except:
+                # El buscador no apareció - sesión expirada, hacer re-login
+                log_debug("Sesión expirada después del refresh - haciendo re-login...")
+                return self.relogin()
+                
+        except Exception as e:
+            log_debug(f"Error en refresh: {str(e)}")
+            return self.relogin()
+    
+    def relogin(self):
+        """
+        Cierra completamente el navegador y abre uno nuevo para restaurar la sesión.
+        Esto libera memoria y asegura un estado completamente limpio.
+        """
+        try:
+            log_debug("Haciendo re-login completo - cerrando navegador y abriendo nuevo...")
+            self.logged_in = False
+            
+            # CERRAR navegador actual completamente
+            try:
+                self.driver.quit()
+            except:
+                pass
+            
+            time.sleep(1)
+            
+            # CREAR nuevo navegador con las mismas opciones
+            options = Options()
+            # Si estaba en headless, mantenerlo (aunque no lo recomiendo para Salesforce)
+            options.add_argument('--headless=new')  # Mantener headless si estaba activo
+            options.add_argument('--disable-gpu')
+            options.add_argument('--no-sandbox')
+            options.add_argument('--disable-dev-shm-usage')
+            options.add_argument('--window-size=1920,1080')
+            options.add_argument('--disable-extensions')
+            options.add_argument('--disable-notifications')
+            options.add_argument('--disable-blink-features=AutomationControlled')
+            options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
+            options.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
+            options.add_experimental_option('useAutomationExtension', False)
+            
+            self.driver = webdriver.Chrome(options=options)
+            self.wait = WebDriverWait(self.driver, 8)
+            
+            # Hacer login normal
+            result = self.login()
+            if result:
+                log_debug("Re-login exitoso - navegador nuevo funcionando")
+                self.errores_consecutivos = 0
+                self.rucs_desde_ultimo_refresh = 0
+            return result
+            
+        except Exception as e:
+            log_debug(f"Error en re-login: {str(e)}")
+            return False
+    
     def buscar_tipo_cliente(self, ruc, intento=1):
         """
         VERSIÓN OPTIMIZADA - Busca RUC y extrae segmento de forma rápida.
@@ -113,7 +194,15 @@ class SegmentacionScraper:
         
         try:
             if not self.logged_in:
-                return None
+                # Intentar re-login si no estamos logueados
+                if not self.relogin():
+                    return "ERROR_NO_LOGUEADO"
+            
+            # REFRESH PREVENTIVO cada N RUCs para evitar saturación
+            self.rucs_desde_ultimo_refresh += 1
+            if self.rucs_desde_ultimo_refresh >= self.RUCS_ANTES_REFRESH:
+                log_debug(f"Refresh preventivo después de {self.rucs_desde_ultimo_refresh} RUCs")
+                self.refresh_session()
             
             # Obtener buscador (ya debería estar disponible)
             search_input = self.wait.until(
@@ -172,6 +261,7 @@ class SegmentacionScraper:
                     valor = match.group(1).strip()
                     if valor and len(valor) > 1:
                         log_debug(f"{ruc} - OK: {valor}", 'exito')
+                        self.errores_consecutivos = 0  # RESETEAR en éxito
                         self._volver_inicio_rapido()
                         return valor
                 
@@ -184,6 +274,7 @@ class SegmentacionScraper:
                     valor = match2.group(1).strip()
                     if valor and len(valor) > 1:
                         log_debug(f"{ruc} - OK: {valor}", 'exito')
+                        self.errores_consecutivos = 0  # RESETEAR en éxito
                         self._volver_inicio_rapido()
                         return valor
                 
@@ -199,6 +290,18 @@ class SegmentacionScraper:
             return "Sin Datos"
             
         except Exception as e:
+            self.errores_consecutivos += 1
+            log_debug(f"{ruc} - Excepción #{self.errores_consecutivos}: {str(e)[:50]}")
+            
+            # Si hay muchos errores consecutivos, la sesión probablemente expiró
+            if self.errores_consecutivos >= self.MAX_ERRORES_ANTES_REFRESH:
+                log_debug(f"Detectados {self.errores_consecutivos} errores consecutivos - refrescando sesión")
+                if self.refresh_session():
+                    # Sesión restaurada - reintentar este RUC
+                    return self.buscar_tipo_cliente(ruc, intento=1)
+                else:
+                    return "ERROR_SESION_PERDIDA"
+            
             if intento < MAX_INTENTOS:
                 try:
                     self._volver_inicio_rapido()

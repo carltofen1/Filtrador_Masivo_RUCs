@@ -83,7 +83,7 @@ def procesar_worker(worker_id, rucs_asignados, sheets):
 
 def main():
     print("=" * 60)
-    print("PROCESADOR DE SEGMENTACION - MODO TURBO (6 WORKERS)")
+    print("PROCESADOR DE SEGMENTACION - MODO TURBO (5 WORKERS)")
     print("=" * 60)
     
     print("\nConectando a Google Sheets...")
