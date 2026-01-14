@@ -38,7 +38,10 @@ def procesar_worker(worker_id, rucs_asignados, sheets):
                 print(f"[W{worker_id}] {idx}/{len(rucs_asignados)}: {ruc} => {resultado}")
                 
                 with sheets_lock:
-                    if tipo_cliente and tipo_cliente not in ['Sin Segmento', 'Sin Datos', 'ERROR_DESCONOCIDO', 'ERROR_REVISION']:
+                    # Valores INVÁLIDOS que requieren reproceso (Sin Segmento SÍ es válido)
+                    valores_invalidos = ['Sin Datos', 'ERROR_DESCONOCIDO', 'ERROR_REVISION', 
+                                        'ERROR_EXCEPCION', 'ERROR_NO_LOGUEADO', 'ERROR_SESION_PERDIDA', 'ERROR']
+                    if tipo_cliente and tipo_cliente not in valores_invalidos:
                         found += 1
                     global_updates.append({
                         'row': row, 
