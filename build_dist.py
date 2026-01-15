@@ -67,8 +67,39 @@ def main():
     # 3. Compilar Launcher (el de la RAIZ que tiene el menú completo)
     log("Compilando Launcher con menú de scrapers...")
     # Usamos launcher.py de la raíz (no el de whatsapp-bot-node)
-    # --paths="." para que encuentre los módulos de procesar_*
-    cmd_launcher = 'pyinstaller --onefile --distpath dist --name launcher --paths="." launcher.py'
+    # --paths="." para que encuentre los módulos
+    # --clean para forzar rebuild limpio
+    # --hidden-import para los imports dinámicos que PyInstaller no detecta
+    hidden_imports = [
+        # Módulos principales de procesamiento
+        'procesar_sunat_paralelo',
+        'procesar_entel_paralelo', 
+        'procesar_segmentacion_paralelo',
+        'procesar_osiptel_paralelo',
+        # Scrapers
+        'modules.sunat_scraper',
+        'modules.entel_scraper',
+        'modules.segmentacion_scraper',
+        'modules.osiptel_scraper',
+        'modules.sheets_manager',
+        'modules.dni_scraper',
+        # Config
+        'config',
+        # Dependencias de terceros que pueden no detectarse
+        'gspread',
+        'oauth2client',
+        'oauth2client.service_account',
+        'selenium',
+        'selenium.webdriver',
+        'selenium.webdriver.chrome.service',
+        'selenium.webdriver.common.by',
+        'selenium.webdriver.support.ui',
+        'selenium.webdriver.support.expected_conditions',
+        'requests',
+        'dotenv',
+    ]
+    hidden_str = ' '.join([f'--hidden-import={h}' for h in hidden_imports])
+    cmd_launcher = f'pyinstaller --onefile --clean --distpath dist --name launcher --paths="." {hidden_str} launcher.py'
     if not run_command(cmd_launcher, "Build Launcher"):
         print("Error crítico construyendo launcher.")
         return
