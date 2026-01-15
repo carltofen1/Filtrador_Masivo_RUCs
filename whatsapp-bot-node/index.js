@@ -1,121 +1,16 @@
 /**
  * Bot de WhatsApp - Cobertura Claro
  * Usando whatsapp-web.js con servidor Python para scrapers
- * Con auto-actualización cuando detecta incompatibilidades
  */
 
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 const http = require('http');
 const path = require('path');
-const { execSync, spawn } = require('child_process');
 
-// Errores que indican incompatibilidad con WhatsApp Web
-const ERRORES_INCOMPATIBILIDAD = [
-    'markedUnread',
-    'sendSeen',
-    'Cannot read properties of undefined',
-    'is not a function',
-    'WWebJS'
-];
-
-let actualizando = false;
-let erroresConsecutivos = 0;
-const MAX_ERRORES_ANTES_REINICIO = 3;
-
-// Función para detectar si es error de incompatibilidad
-function esErrorIncompatibilidad(error) {
-    const mensaje = error.message || error.toString();
-    // Excluir errores de sesión cerrada (son temporales durante reinicio)
-    if (mensaje.includes('Session closed') || mensaje.includes('page has been closed')) {
-        return false;
-    }
-    return ERRORES_INCOMPATIBILIDAD.some(patron => mensaje.includes(patron));
-}
-
-// Función para auto-actualizar y reiniciar
-async function autoActualizarYReiniciar() {
-    if (actualizando) return;
-    actualizando = true;
-
-    console.log();
-    console.log('='.repeat(50));
-    console.log('⚠️  DETECTADA INCOMPATIBILIDAD CON WHATSAPP WEB');
-    console.log('='.repeat(50));
-    console.log();
-    console.log('🔄 Actualizando whatsapp-web.js automáticamente...');
-
-    try {
-        // Cerrar el cliente de WhatsApp
-        try {
-            await client.destroy();
-        } catch (e) {
-            // Ignorar errores al cerrar
-        }
-
-        const fs = require('fs');
-
-        // Limpiar caché de WhatsApp Web
-        console.log('🧹 Limpiando caché de WhatsApp Web...');
-        const cachePaths = [
-            path.join(__dirname, '.wwebjs_cache'),
-            path.join(__dirname, '.wwebjs_auth')
-        ];
-
-        for (const cachePath of cachePaths) {
-            try {
-                if (fs.existsSync(cachePath)) {
-                    fs.rmSync(cachePath, { recursive: true, force: true });
-                    console.log(`   ✓ Eliminado: ${path.basename(cachePath)}`);
-                }
-            } catch (e) {
-                console.log(`   ⚠️ No se pudo eliminar: ${path.basename(cachePath)}`);
-            }
-        }
-
-        // Limpiar caché de npm
-        console.log('🧹 Limpiando caché de npm...');
-        try {
-            execSync('npm cache clean --force', { cwd: __dirname, stdio: 'pipe' });
-        } catch (e) {
-            // Ignorar errores de limpieza de npm cache
-        }
-
-        // Ejecutar npm update
-        console.log('📦 Ejecutando: npm update whatsapp-web.js');
-        execSync('npm update whatsapp-web.js', {
-            cwd: __dirname,
-            stdio: 'inherit'
-        });
-
-        console.log('✅ Actualización completada');
-        console.log('🔄 Reiniciando bot en 3 segundos...');
-        console.log('📱 Necesitarás escanear el QR nuevamente');
-        console.log();
-
-        // Esperar 3 segundos y reiniciar
-        setTimeout(() => {
-            // Reiniciar el proceso de Node.js
-            const args = process.argv.slice(1);
-            const child = spawn(process.argv[0], args, {
-                cwd: __dirname,
-                detached: true,
-                stdio: 'inherit'
-            });
-            child.unref();
-            process.exit(0);
-        }, 3000);
-
-    } catch (updateError) {
-        console.error('❌ Error al actualizar:', updateError.message);
-        console.log('💡 Intenta manualmente: npm update whatsapp-web.js');
-        process.exit(1);
-    }
-}
-
-console.log('='.repeat(50));
+console.log('==================================================');
 console.log('   BOT DE WHATSAPP - COBERTURA CLARO (Node.js)');
-console.log('='.repeat(50));
+console.log('==================================================');
 console.log();
 
 // Cola de comandos
@@ -133,10 +28,10 @@ const COMANDOS = {
     '.dni': 'dni'
 };
 
-// Crear cliente de WhatsApp con sesión persistente
+// Crear cliente de WhatsApp
 const client = new Client({
     authStrategy: new LocalAuth({
-        dataPath: path.join(__dirname, '.wwebjs_auth')
+        dataPath: path.join(process.cwd(), '.wwebjs_auth')
     }),
     puppeteer: {
         headless: true,
@@ -147,7 +42,8 @@ const client = new Client({
             '--disable-dev-shm-usage',
             '--disable-accelerated-2d-canvas',
             '--disable-gpu',
-            '--window-size=1920,1080'
+            '--window-size=1920,1080',
+            '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36'
         ]
     }
 });
@@ -159,78 +55,80 @@ client.on('qr', (qr) => {
     qrcode.generate(qr, { small: true });
 });
 
-// Evento: Autenticando
+// Evento: Autenticado
 client.on('authenticated', () => {
-    console.log('✅ Autenticado correctamente!');
+    console.log('[OK] Autenticado correctamente');
 });
 
 // Evento: Listo
 client.on('ready', () => {
     console.log();
-    console.log('✅ Bot listo y escuchando mensajes!');
+    console.log('[OK] Bot listo y escuchando mensajes');
     console.log();
-    console.log('-'.repeat(50));
+    console.log('--------------------------------------------------');
     console.log('COMANDOS:');
     console.log('   .!                  - Ayuda');
     console.log('   .delivery lat, lng  - Cobertura delivery');
     console.log('   .internet lat, lng  - Cobertura internet');
     console.log('   .ruc NUMERO         - Datos SUNAT + telefono ENTEL');
     console.log('   .dni NUMERO         - Datos RENIEC por DNI');
-    console.log('-'.repeat(50));
+    console.log('--------------------------------------------------');
     console.log();
     console.log('(Ctrl+C para detener)');
     console.log();
 });
 
-// Función segura para responder mensajes (evita crash por sendSeen)
+// Funcion para enviar mensaje con reintentos
 async function safeReply(message, text) {
-    try {
-        await message.reply(text);
-        erroresConsecutivos = 0; // Reset en éxito
-        return true;
-    } catch (replyError) {
-        console.log('⚠️ Error en reply, usando sendMessage como fallback...');
+    const MAX_REINTENTOS = 3;
+    const chatId = message.from || message.id?.remote;
 
+    console.log('[SEND] Destino:', chatId);
+    console.log('[SEND] Texto:', text.substring(0, 50) + '...');
+
+    for (let intento = 1; intento <= MAX_REINTENTOS; intento++) {
+        // Intentar con reply()
         try {
-            // Usar chatId directamente del mensaje, sin llamar getChat()
-            const chatId = message.from || message.id?.remote;
-            if (!chatId) {
-                throw new Error('No se pudo determinar el chat destino');
-            }
-            await client.sendMessage(chatId, text);
-            console.log('✅ Fallback exitoso con sendMessage');
-            erroresConsecutivos = 0; // Reset en éxito
+            console.log('[INTENTO ' + intento + '/' + MAX_REINTENTOS + '] Usando reply()...');
+            await message.reply(text);
+            console.log('[OK] reply() exitoso');
             return true;
-        } catch (fallbackError) {
-            console.error('❌ Error en fallback sendMessage:', fallbackError.message);
+        } catch (replyError) {
+            console.log('[FAIL] reply() error:', replyError.message);
 
-            // Solo contar como error de incompatibilidad si realmente lo es
-            if (esErrorIncompatibilidad(replyError) || esErrorIncompatibilidad(fallbackError)) {
-                erroresConsecutivos++;
-                console.log(`⚠️ Errores de incompatibilidad consecutivos: ${erroresConsecutivos}/${MAX_ERRORES_ANTES_REINICIO}`);
+            // Intentar con sendMessage()
+            try {
+                if (!chatId) {
+                    console.log('[ERROR] No hay chatId disponible');
+                    continue;
+                }
+                console.log('[INTENTO ' + intento + '/' + MAX_REINTENTOS + '] Usando sendMessage()...');
+                await client.sendMessage(chatId, text);
+                console.log('[OK] sendMessage() exitoso');
+                return true;
+            } catch (sendError) {
+                console.log('[FAIL] sendMessage() error:', sendError.message);
 
-                if (erroresConsecutivos >= MAX_ERRORES_ANTES_REINICIO) {
-                    console.log('🔄 Demasiados errores consecutivos, iniciando auto-actualización...');
-                    await autoActualizarYReiniciar();
+                if (intento < MAX_REINTENTOS) {
+                    console.log('[WAIT] Esperando 2 segundos antes de reintentar...');
+                    await new Promise(r => setTimeout(r, 2000));
                 }
             }
-            return false;
         }
     }
+
+    console.log('[FATAL] No se pudo enviar el mensaje despues de ' + MAX_REINTENTOS + ' intentos');
+    return false;
 }
 
 // Procesar cola de comandos
 async function processQueue() {
-    if (actualizando) {
-        console.log('⏸️ Cola pausada - bot actualizándose...');
-        return;
-    }
     if (isProcessing || commandQueue.length === 0) return;
 
     isProcessing = true;
 
     try {
-        while (commandQueue.length > 0 && !actualizando) {
+        while (commandQueue.length > 0) {
             const { message, comando, args } = commandQueue.shift();
 
             try {
@@ -241,34 +139,38 @@ async function processQueue() {
                         respuesta = getHelpMessage();
                         break;
                     case 'ruc':
-                        await safeReply(message, '⏳ Consultando RUC...\nEspera un momento...');
+                        await safeReply(message, 'Consultando RUC...\nEspera un momento...');
                         respuesta = await llamarPythonServer('ruc', args);
                         break;
                     case 'delivery':
-                        await safeReply(message, '⏳ Consultando cobertura de delivery...');
+                        await safeReply(message, 'Consultando cobertura de delivery...');
                         respuesta = await llamarPythonServer('delivery', args);
                         break;
                     case 'internet':
-                        await safeReply(message, '⏳ Consultando cobertura de internet...');
+                        await safeReply(message, 'Consultando cobertura de internet...');
                         respuesta = await llamarPythonServer('internet', args);
                         break;
                     case 'dni':
-                        await safeReply(message, '⏳ Consultando DNI en RENIEC...');
+                        await safeReply(message, 'Consultando DNI en RENIEC...');
                         respuesta = await llamarPythonServer('dni', args);
                         break;
                 }
 
                 if (respuesta) {
-                    await safeReply(message, respuesta);
-                    console.log('✅ Respuesta enviada');
+                    const enviado = await safeReply(message, respuesta);
+                    if (enviado) {
+                        console.log('[OK] Respuesta enviada');
+                    } else {
+                        console.log('[FAIL] No se pudo enviar la respuesta');
+                    }
                 }
 
             } catch (error) {
-                console.error(`❌ Error procesando comando: ${error.message}`);
+                console.error('[ERROR] Procesando comando:', error.message);
                 try {
-                    await safeReply(message, `❌ Error: ${error.message}`);
+                    await safeReply(message, 'Error: ' + error.message);
                 } catch (e) {
-                    console.error('❌ No se pudo enviar mensaje de error');
+                    console.error('[ERROR] No se pudo enviar mensaje de error');
                 }
             }
         }
@@ -283,7 +185,7 @@ function llamarPythonServer(comando, args) {
         const data = JSON.stringify({ comando, args });
 
         const options = {
-            hostname: 'localhost',
+            hostname: '127.0.0.1',
             port: 5555,
             path: '/',
             method: 'POST',
@@ -301,7 +203,7 @@ function llamarPythonServer(comando, args) {
                     const json = JSON.parse(body);
                     resolve(json.resultado);
                 } catch (e) {
-                    reject(new Error('Respuesta inválida del servidor'));
+                    reject(new Error('Respuesta invalida del servidor'));
                 }
             });
         });
@@ -312,7 +214,7 @@ function llamarPythonServer(comando, args) {
 
         req.setTimeout(90000, () => {
             req.destroy();
-            reject(new Error('Timeout - consulta tardó demasiado'));
+            reject(new Error('Timeout - consulta tardo demasiado'));
         });
 
         req.write(data);
@@ -350,7 +252,7 @@ client.on('message', async (message) => {
     // Solo procesar mensajes que empiecen con .
     if (!texto.startsWith('.')) return;
 
-    console.log(`📩 COMANDO: ${texto}`);
+    console.log('[CMD] Recibido:', texto);
 
     // Buscar comando
     let comando = null;
@@ -370,7 +272,7 @@ client.on('message', async (message) => {
 
     // Agregar a la cola
     commandQueue.push({ message, comando, args });
-    console.log(`   📋 Cola: ${commandQueue.length} pendientes`);
+    console.log('[QUEUE] Pendientes:', commandQueue.length);
 
     // Procesar cola
     processQueue();
@@ -378,29 +280,12 @@ client.on('message', async (message) => {
 
 // Evento: Desconectado
 client.on('disconnected', async (reason) => {
-    console.log('❌ Cliente desconectado:', reason);
-
-    // Si fue logout, limpiar sesión para evitar errores de lockfile
-    if (reason === 'LOGOUT') {
-        console.log('🧹 Limpiando sesión anterior...');
-        const fs = require('fs');
-        const authPath = path.join(__dirname, '.wwebjs_auth');
-
-        try {
-            if (fs.existsSync(authPath)) {
-                fs.rmSync(authPath, { recursive: true, force: true });
-                console.log('✅ Sesión limpiada. Reinicia el bot para escanear QR nuevamente.');
-            }
-        } catch (e) {
-            console.log('⚠️ No se pudo limpiar sesión automáticamente.');
-            console.log('   Ejecuta manualmente: rmdir /s /q .wwebjs_auth');
-        }
-    }
+    console.log('[DISCONNECT] Razon:', reason);
 });
 
 // Iniciar cliente
 console.log('Iniciando cliente de WhatsApp...');
-console.log('IMPORTANTE: Asegúrate de que el servidor Python esté corriendo!');
-console.log('   En otra terminal: cd whatsapp-bot-node && python python_server.py');
+console.log('IMPORTANTE: Asegurate de que el servidor Python este corriendo');
+console.log('   En otra terminal: python python_server.py');
 console.log();
 client.initialize();

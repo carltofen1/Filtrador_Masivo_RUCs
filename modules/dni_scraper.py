@@ -4,14 +4,36 @@ Módulo para consultar DNI combinando 2 APIs:
 - MiAPI Cloud: Dirección y ubigeo
 - PERUDEVS: Fecha nacimiento, género, código verificación
 """
+import sys
 import os
 import requests
 from typing import Dict, Optional
 from datetime import datetime
 from dotenv import load_dotenv
 
-# Cargar variables de entorno
-load_dotenv()
+# Determinar la ruta base (compatible con PyInstaller)
+if getattr(sys, 'frozen', False):
+    # Ejecutando como EXE empaquetado
+    BASE_DIR = os.path.dirname(sys.executable)
+else:
+    # Ejecutando como script Python
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Cargar variables de entorno desde la ubicación correcta
+env_path = os.path.join(BASE_DIR, '.env')
+if os.path.exists(env_path):
+    load_dotenv(env_path)
+    print(f"[DNI] .env cargado desde: {env_path}")
+else:
+    # Intentar también en el directorio padre (por compatibilidad)
+    env_path_parent = os.path.join(os.path.dirname(BASE_DIR), '.env')
+    if os.path.exists(env_path_parent):
+        load_dotenv(env_path_parent)
+        print(f"[DNI] .env cargado desde: {env_path_parent}")
+    else:
+        # Intento default
+        load_dotenv()
+        print(f"[DNI] ADVERTENCIA: No se encontró .env en {env_path}")
 
 class DniScraper:
     def __init__(self, miapi_token: str = None, perudevs_key: str = None):
