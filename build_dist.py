@@ -64,9 +64,11 @@ def main():
         print("Error crítico construyendo server.")
         return
 
-    # 3. Compilar Launcher
-    log("Compilando Launcher...")
-    cmd_launcher = 'pyinstaller --onefile --distpath dist --name launcher whatsapp-bot-node/launcher.py'
+    # 3. Compilar Launcher (el de la RAIZ que tiene el menú completo)
+    log("Compilando Launcher con menú de scrapers...")
+    # Usamos launcher.py de la raíz (no el de whatsapp-bot-node)
+    # --paths="." para que encuentre los módulos de procesar_*
+    cmd_launcher = 'pyinstaller --onefile --distpath dist --name launcher --paths="." launcher.py'
     if not run_command(cmd_launcher, "Build Launcher"):
         print("Error crítico construyendo launcher.")
         return

@@ -40,9 +40,8 @@ def main():
     kill_process("server.exe")
     kill_process("bot.exe")
 
-    # 2. Limpiar sesión corrupta
-    # La carpeta de sesión suele llamarse .wwebjs_auth
-    clean_session()
+    # 2. NO limpiar sesión - mantener el login de WhatsApp
+    # clean_session()  # DESHABILITADO: mantener sesión entre reinicios
 
     # 3. Iniciar Servidor Python
     log("Iniciando Servidor Python (Backend)...")
