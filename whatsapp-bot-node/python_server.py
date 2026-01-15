@@ -17,8 +17,9 @@ import contextlib
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 
-# Path para imports
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Path para imports (Solo si corremos como script, no congelado)
+if not getattr(sys, 'frozen', False):
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from modules.sunat_scraper import SunatScraper
 from modules.entel_scraper import EntelScraper
@@ -274,18 +275,21 @@ if __name__ == '__main__':
     print(f"Puerto: {PORT}")
     print()
     
-    # Pre-iniciar scrapers
+    # Pre-iniciar scrapers (con manejo de errores para que no tumba el server)
     print("Inicializando scrapers...")
-    get_claro_scraper()
-    
-    # Iniciar keep-alive para mantener sesión Claro activa
-    start_keep_alive()
+    try:
+        get_claro_scraper()
+        # Iniciar keep-alive solo si el login funcionó
+        start_keep_alive()
+    except Exception as e:
+        print(f"ERROR FATAL INICIANDO SCRAPER DE CLARO: {e}")
+        print("El servidor iniciará, pero las consultas de Claro fallarán hasta arreglarlo.")
     
     print()
     print("Servidor listo! Esperando comandos...")
     print()
     
-    server = HTTPServer(('localhost', PORT), CommandHandler)
+    server = HTTPServer(('127.0.0.1', PORT), CommandHandler)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
