@@ -7,11 +7,51 @@ const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 const http = require('http');
 const path = require('path');
+const fs = require('fs');
 
 console.log('==================================================');
 console.log('   BOT DE WHATSAPP - COBERTURA CLARO (Node.js)');
 console.log('==================================================');
 console.log();
+
+// Detectar si estamos corriendo como ejecutable empaquetado (pkg)
+// En pkg, process.pkg existe y el snapshot está en process.execPath
+const isPackaged = typeof process.pkg !== 'undefined';
+
+// Base path: junto al ejecutable si está empaquetado, o cwd si es desarrollo
+const BASE_PATH = isPackaged ? path.dirname(process.execPath) : process.cwd();
+console.log('[CONFIG] Modo:', isPackaged ? 'Empaquetado (pkg)' : 'Desarrollo');
+console.log('[CONFIG] Base path:', BASE_PATH);
+
+// Función para encontrar Chrome en ubicaciones comunes de Windows
+function findChromePath() {
+    // Primero revisar variable de entorno
+    if (process.env.CHROME_PATH && fs.existsSync(process.env.CHROME_PATH)) {
+        console.log('[CHROME] Usando CHROME_PATH del entorno:', process.env.CHROME_PATH);
+        return process.env.CHROME_PATH;
+    }
+
+    // Rutas comunes de Chrome en Windows
+    const possiblePaths = [
+        'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+        'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+        path.join(process.env.LOCALAPPDATA || '', 'Google', 'Chrome', 'Application', 'chrome.exe'),
+        path.join(process.env.PROGRAMFILES || '', 'Google', 'Chrome', 'Application', 'chrome.exe'),
+        path.join(process.env['PROGRAMFILES(X86)'] || '', 'Google', 'Chrome', 'Application', 'chrome.exe'),
+    ];
+
+    for (const chromePath of possiblePaths) {
+        if (chromePath && fs.existsSync(chromePath)) {
+            console.log('[CHROME] Encontrado en:', chromePath);
+            return chromePath;
+        }
+    }
+
+    console.log('[CHROME] ADVERTENCIA: No se encontró Chrome. Puppeteer intentará usar su propio Chromium.');
+    return undefined; // Puppeteer intentará descargar/usar Chromium
+}
+
+const CHROME_PATH = findChromePath();
 
 // Cola de comandos
 const commandQueue = [];
@@ -28,14 +68,18 @@ const COMANDOS = {
     '.dni': 'dni'
 };
 
+// Ruta de datos de sesión
+const AUTH_PATH = path.join(BASE_PATH, '.wwebjs_auth');
+console.log('[CONFIG] Sesión en:', AUTH_PATH);
+
 // Crear cliente de WhatsApp
 const client = new Client({
     authStrategy: new LocalAuth({
-        dataPath: path.join(process.cwd(), '.wwebjs_auth')
+        dataPath: AUTH_PATH
     }),
     puppeteer: {
         headless: true,
-        executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+        executablePath: CHROME_PATH,
         args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',

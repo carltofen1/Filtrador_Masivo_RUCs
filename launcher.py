@@ -144,10 +144,10 @@ def ejecutar_entel():
         traceback.print_exc()
 
 def ejecutar_segmentacion():
-    print("\nIniciando procesador de SEGMENTACION (API Aura)...")
+    print("\nIniciando procesador de SEGMENTACION (100% API)...")
     print("-" * 40)
     try:
-        from procesar_segmentacion_aura import main as segmentacion_main
+        from procesar_segmentacion_api import main as segmentacion_main
         segmentacion_main()
     except Exception as e:
         print(f"\n*** ERROR EN SEGMENTACION ***")
