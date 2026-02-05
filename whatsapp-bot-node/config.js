@@ -3,15 +3,15 @@
  */
 
 module.exports = {
-    // Credenciales ENTEL
-    ENTEL_USERNAME: 'ventas.admin2@entelempresa.pe',
-    ENTEL_PASSWORD: 'Interconexion123.',
+    // Credenciales ENTEL (configurar en variables de entorno)
+    ENTEL_USERNAME: process.env.ENTEL_USERNAME || '',
+    ENTEL_PASSWORD: process.env.ENTEL_PASSWORD || '',
     ENTEL_URL: 'https://entel.insolutions.pe/entelid-portal/Account/Login',
 
-    // Credenciales Portal Factibilidad Claro
+    // Credenciales Portal Factibilidad Claro (configurar en variables de entorno)
     FACTIBILIDAD_URL: 'https://172.19.90.243/portalfactibilidad/public/',
-    FACTIBILIDAD_USERNAME: 'D99957628',
-    FACTIBILIDAD_PASSWORD: 'Europa1234*',
+    FACTIBILIDAD_USERNAME: process.env.FACTIBILIDAD_USERNAME || '',
+    FACTIBILIDAD_PASSWORD: process.env.FACTIBILIDAD_PASSWORD || '',
 
     // URL SUNAT
     SUNAT_URL: 'https://e-consultaruc.sunat.gob.pe/cl-ti-itmrconsruc/jcrS00Alias',

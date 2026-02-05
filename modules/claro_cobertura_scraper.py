@@ -20,8 +20,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 try:
     from config import FACTIBILIDAD_USERNAME, FACTIBILIDAD_PASSWORD, FACTIBILIDAD_URL
 except ImportError:
-    FACTIBILIDAD_USERNAME = 'D99957628'
-    FACTIBILIDAD_PASSWORD = 'Europa1234*'
+    FACTIBILIDAD_USERNAME = ''
+    FACTIBILIDAD_PASSWORD = ''
     FACTIBILIDAD_URL = 'https://172.19.90.243/portalfactibilidad/public/'
 
 class ClaroCoberturaScraper:
