@@ -9,6 +9,15 @@ const http = require('http');
 const path = require('path');
 const fs = require('fs');
 
+// ==================== SISTEMA DE RECONEXIÓN AUTOMÁTICA ====================
+let client = null;
+let isReconnecting = false;
+let reconnectAttempts = 0;
+const MAX_RECONNECT_ATTEMPTS = 10;
+const RECONNECT_DELAY_MS = 30000; // 30 segundos entre intentos
+const HEALTH_CHECK_INTERVAL_MS = 5 * 60 * 1000; // Verificar cada 5 minutos
+let healthCheckInterval = null;
+
 console.log('==================================================');
 console.log('   BOT DE WHATSAPP - COBERTURA CLARO (Node.js)');
 console.log('==================================================');
@@ -72,54 +81,266 @@ const COMANDOS = {
 const AUTH_PATH = path.join(BASE_PATH, '.wwebjs_auth');
 console.log('[CONFIG] Sesión en:', AUTH_PATH);
 
-// Crear cliente de WhatsApp
-const client = new Client({
-    authStrategy: new LocalAuth({
-        dataPath: AUTH_PATH
-    }),
-    puppeteer: {
-        headless: true,
-        executablePath: CHROME_PATH,
-        args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-accelerated-2d-canvas',
-            '--disable-gpu',
-            '--window-size=1920,1080',
-            '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36'
-        ]
+// ==================== FUNCIÓN PARA CREAR CLIENTE ====================
+function createClient() {
+    console.log('[INIT] Creando nuevo cliente de WhatsApp...');
+
+    const newClient = new Client({
+        authStrategy: new LocalAuth({
+            dataPath: AUTH_PATH,
+            clientId: 'bot-client'
+        }),
+        webVersionCache: {
+            type: 'remote',
+            remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.3000.1031894700-alpha.html'
+        },
+        puppeteer: {
+            headless: true,
+            executablePath: CHROME_PATH,
+            args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-accelerated-2d-canvas',
+                '--disable-gpu',
+                '--window-size=1920,1080',
+                '--disable-client-updates'
+            ]
+        }
+    });
+
+    // Evento: QR Code
+    newClient.on('qr', (qr) => {
+        console.log('Escanea el codigo QR con tu WhatsApp:');
+        console.log();
+        qrcode.generate(qr, { small: true });
+    });
+
+    // Evento: Autenticado
+    newClient.on('authenticated', () => {
+        console.log('[OK] Autenticado correctamente');
+        reconnectAttempts = 0; // Reset intentos al autenticar
+    });
+
+    // Evento: Cargando pantalla
+    newClient.on('loading_screen', (percent, message) => {
+        console.log('[LOADING]', percent + '%', message);
+    });
+
+    // Evento: Fallo de autenticación
+    newClient.on('auth_failure', (msg) => {
+        console.log('[ERROR] Fallo de autenticación:', msg);
+    });
+
+    // Evento: Cambio de estado
+    newClient.on('change_state', (state) => {
+        console.log('[STATE]', state);
+    });
+
+    // Capturar logs del navegador
+    newClient.on('authenticated', async () => {
+        try {
+            const page = newClient.pupPage;
+            if (page) {
+                page.on('console', msg => console.log('[BROWSER]', msg.text()));
+                page.on('pageerror', err => console.log('[BROWSER ERROR]', err.toString()));
+            }
+        } catch (e) {
+            console.log('[DEBUG] Error inyectando hooks:', e.message);
+        }
+    });
+
+    // Debug: Sesión remota
+    newClient.on('remote_session_saved', () => {
+        console.log('[DEBUG] Sesión remota guardada');
+    });
+
+    // Debug: Mensaje RAW
+    newClient.on('message_create', (msg) => {
+        console.log('[RAW MSG]', msg.from, '->', msg.body.substring(0, 30));
+    });
+
+    // Evento: Listo - Iniciar healthcheck
+    newClient.on('ready', () => {
+        console.log();
+        console.log('[OK] Bot listo y escuchando mensajes');
+        console.log('[OK] Hora:', new Date().toLocaleString());
+        console.log();
+        console.log('--------------------------------------------------');
+        console.log('COMANDOS:');
+        console.log('   .!                  - Ayuda');
+        console.log('   .delivery lat, lng  - Cobertura delivery');
+        console.log('   .internet lat, lng  - Cobertura internet');
+        console.log('   .ruc NUMERO         - Datos SUNAT + telefono ENTEL');
+        console.log('   .dni NUMERO         - Datos RENIEC por DNI');
+        console.log('--------------------------------------------------');
+        console.log();
+        console.log('(Ctrl+C para detener)');
+        console.log();
+
+        // Iniciar healthcheck periódico
+        startHealthCheck();
+    });
+
+    // Evento: Mensaje propio
+    newClient.on('message_create', async (message) => {
+        if (message.fromMe) {
+            console.log('[DEBUG] Mensaje propio:', message.body.substring(0, 30));
+        }
+    });
+
+    // ==================== EVENTOS DE DESCONEXIÓN Y ERROR ====================
+
+    // Evento: Desconectado
+    newClient.on('disconnected', async (reason) => {
+        console.log('[DISCONNECT]', new Date().toLocaleString(), 'Razón:', reason);
+        stopHealthCheck();
+        await attemptReconnect('disconnected: ' + reason);
+    });
+
+    return newClient;
+}
+
+// ==================== SISTEMA DE HEALTHCHECK ====================
+function startHealthCheck() {
+    stopHealthCheck(); // Limpiar cualquier intervalo anterior
+
+    console.log('[HEALTH] Iniciando verificación cada 5 minutos...');
+
+    healthCheckInterval = setInterval(async () => {
+        try {
+            if (!client) {
+                console.log('[HEALTH] Cliente no existe, reconectando...');
+                await attemptReconnect('client null');
+                return;
+            }
+
+            // Verificar si Puppeteer sigue vivo
+            const state = await client.getState().catch(() => null);
+
+            if (state === null) {
+                console.log('[HEALTH] Estado nulo, posible desconexión...');
+                await attemptReconnect('state null');
+                return;
+            }
+
+            if (state !== 'CONNECTED') {
+                console.log('[HEALTH] Estado:', state, '- Reconectando...');
+                await attemptReconnect('state: ' + state);
+                return;
+            }
+
+            console.log('[HEALTH]', new Date().toLocaleString(), '- OK (CONNECTED)');
+
+        } catch (error) {
+            console.log('[HEALTH] Error:', error.message);
+
+            // Si el error es sobre contexto destruido, reconectar
+            if (error.message.includes('context was destroyed') ||
+                error.message.includes('Session closed') ||
+                error.message.includes('Target closed') ||
+                error.message.includes('Protocol error')) {
+                await attemptReconnect('healthcheck error: ' + error.message);
+            }
+        }
+    }, HEALTH_CHECK_INTERVAL_MS);
+}
+
+function stopHealthCheck() {
+    if (healthCheckInterval) {
+        clearInterval(healthCheckInterval);
+        healthCheckInterval = null;
+    }
+}
+
+// ==================== SISTEMA DE RECONEXIÓN ====================
+async function attemptReconnect(reason) {
+    if (isReconnecting) {
+        console.log('[RECONNECT] Ya hay una reconexión en progreso...');
+        return;
+    }
+
+    isReconnecting = true;
+    reconnectAttempts++;
+
+    console.log('[RECONNECT] Intento', reconnectAttempts, '/', MAX_RECONNECT_ATTEMPTS);
+    console.log('[RECONNECT] Razón:', reason);
+
+    if (reconnectAttempts > MAX_RECONNECT_ATTEMPTS) {
+        console.log('[FATAL] Máximo de intentos alcanzado. Reinicia el bot manualmente.');
+        console.log('[FATAL] Hora:', new Date().toLocaleString());
+        process.exit(1);
+    }
+
+    try {
+        // Detener healthcheck
+        stopHealthCheck();
+
+        // Intentar destruir cliente anterior
+        if (client) {
+            try {
+                console.log('[RECONNECT] Destruyendo cliente anterior...');
+                await client.destroy().catch(() => { });
+            } catch (e) {
+                console.log('[RECONNECT] Error destruyendo cliente:', e.message);
+            }
+        }
+
+        // Esperar antes de reconectar
+        console.log('[RECONNECT] Esperando', RECONNECT_DELAY_MS / 1000, 'segundos...');
+        await new Promise(r => setTimeout(r, RECONNECT_DELAY_MS));
+
+        // Crear nuevo cliente
+        client = createClient();
+
+        // Configurar manejador de mensajes
+        setupMessageHandler();
+
+        // Inicializar
+        console.log('[RECONNECT] Inicializando nuevo cliente...');
+        await client.initialize();
+
+        console.log('[RECONNECT] Reconexión exitosa!');
+        isReconnecting = false;
+
+    } catch (error) {
+        console.log('[RECONNECT] Error:', error.message);
+        isReconnecting = false;
+
+        // Reintentar después de un delay
+        setTimeout(() => attemptReconnect('retry after error'), RECONNECT_DELAY_MS);
+    }
+}
+
+// ==================== MANEJO GLOBAL DE ERRORES ====================
+process.on('uncaughtException', async (error) => {
+    console.log('[UNCAUGHT]', new Date().toLocaleString());
+    console.log('[UNCAUGHT] Error:', error.message);
+
+    // Si es error de contexto destruido, reconectar
+    if (error.message.includes('context was destroyed') ||
+        error.message.includes('Session closed') ||
+        error.message.includes('Target closed') ||
+        error.message.includes('navigation')) {
+        console.log('[UNCAUGHT] Intentando reconexión automática...');
+        await attemptReconnect('uncaughtException: ' + error.message);
+    } else {
+        console.log('[UNCAUGHT] Stack:', error.stack);
     }
 });
 
-// Evento: QR Code
-client.on('qr', (qr) => {
-    console.log('Escanea el codigo QR con tu WhatsApp:');
-    console.log();
-    qrcode.generate(qr, { small: true });
-});
+process.on('unhandledRejection', async (reason, promise) => {
+    console.log('[UNHANDLED]', new Date().toLocaleString());
+    console.log('[UNHANDLED] Razón:', reason);
 
-// Evento: Autenticado
-client.on('authenticated', () => {
-    console.log('[OK] Autenticado correctamente');
-});
-
-// Evento: Listo
-client.on('ready', () => {
-    console.log();
-    console.log('[OK] Bot listo y escuchando mensajes');
-    console.log();
-    console.log('--------------------------------------------------');
-    console.log('COMANDOS:');
-    console.log('   .!                  - Ayuda');
-    console.log('   .delivery lat, lng  - Cobertura delivery');
-    console.log('   .internet lat, lng  - Cobertura internet');
-    console.log('   .ruc NUMERO         - Datos SUNAT + telefono ENTEL');
-    console.log('   .dni NUMERO         - Datos RENIEC por DNI');
-    console.log('--------------------------------------------------');
-    console.log();
-    console.log('(Ctrl+C para detener)');
-    console.log();
+    const reasonStr = String(reason);
+    if (reasonStr.includes('context was destroyed') ||
+        reasonStr.includes('Session closed') ||
+        reasonStr.includes('Target closed') ||
+        reasonStr.includes('navigation')) {
+        console.log('[UNHANDLED] Intentando reconexión automática...');
+        await attemptReconnect('unhandledRejection');
+    }
 });
 
 // Funcion para enviar mensaje con reintentos
@@ -289,47 +510,89 @@ Ejemplo: .dni 12345678
 Coord. de Google Maps`;
 }
 
-// Evento: Mensaje recibido
-client.on('message', async (message) => {
-    const texto = message.body.trim();
-
-    // Solo procesar mensajes que empiecen con .
-    if (!texto.startsWith('.')) return;
-
-    console.log('[CMD] Recibido:', texto);
-
-    // Buscar comando
-    let comando = null;
-    let args = '';
-
-    const textoLower = texto.toLowerCase();
-
-    for (const [cmdKey, cmdValue] of Object.entries(COMANDOS)) {
-        if (textoLower.startsWith(cmdKey)) {
-            comando = cmdValue;
-            args = texto.slice(cmdKey.length).trim().replace(/[{}\[\]]/g, '');
-            break;
-        }
+// ==================== MANEJADOR DE MENSAJES ====================
+function setupMessageHandler() {
+    if (!client) {
+        console.log('[ERROR] No hay cliente para configurar manejador de mensajes');
+        return;
     }
 
-    if (!comando) return;
+    client.on('message', async (message) => {
+        try {
+            console.log('[DEBUG] Mensaje entrante de:', message.from);
+            console.log('[DEBUG] Contenido:', message.body);
+            console.log('[DEBUG] Es de grupo?:', message.isGroupMsg);
 
-    // Agregar a la cola
-    commandQueue.push({ message, comando, args });
-    console.log('[QUEUE] Pendientes:', commandQueue.length);
+            const texto = message.body.trim();
 
-    // Procesar cola
-    processQueue();
-});
+            // Solo procesar mensajes que empiecen con .
+            if (!texto.startsWith('.')) {
+                console.log('[DEBUG] Ignorado (no empieza con .)');
+                return;
+            }
 
-// Evento: Desconectado
-client.on('disconnected', async (reason) => {
-    console.log('[DISCONNECT] Razon:', reason);
-});
+            console.log('[CMD] Recibido:', texto);
 
-// Iniciar cliente
-console.log('Iniciando cliente de WhatsApp...');
-console.log('IMPORTANTE: Asegurate de que el servidor Python este corriendo');
-console.log('   En otra terminal: python python_server.py');
-console.log();
-client.initialize();
+            // Buscar comando
+            let comando = null;
+            let args = '';
+
+            const textoLower = texto.toLowerCase();
+
+            for (const [cmdKey, cmdValue] of Object.entries(COMANDOS)) {
+                if (textoLower.startsWith(cmdKey)) {
+                    comando = cmdValue;
+                    args = texto.slice(cmdKey.length).trim().replace(/[{}\[\]]/g, '');
+                    break;
+                }
+            }
+
+            if (!comando) return;
+
+            // Agregar a la cola
+            commandQueue.push({ message, comando, args });
+            console.log('[QUEUE] Pendientes:', commandQueue.length);
+
+            // Procesar cola
+            processQueue();
+
+        } catch (error) {
+            console.log('[MSG ERROR]', error.message);
+
+            // Si es error de contexto destruido, ignorar y dejar que el healthcheck reconecte
+            if (error.message.includes('context was destroyed') ||
+                error.message.includes('Session closed')) {
+                console.log('[MSG ERROR] Contexto destruido, esperando reconexión...');
+            }
+        }
+    });
+}
+
+// ==================== INICIO DEL BOT ====================
+async function startBot() {
+    console.log('Iniciando cliente de WhatsApp...');
+    console.log('IMPORTANTE: Asegúrate de que el servidor Python esté corriendo');
+    console.log('   En otra terminal: python python_server.py');
+    console.log();
+    console.log('[HORA INICIO]', new Date().toLocaleString());
+    console.log();
+
+    try {
+        // Crear cliente
+        client = createClient();
+
+        // Configurar manejador de mensajes
+        setupMessageHandler();
+
+        // Inicializar
+        await client.initialize();
+
+    } catch (error) {
+        console.log('[FATAL] Error iniciando bot:', error.message);
+        console.log('[FATAL] Reintentando en 30 segundos...');
+        setTimeout(startBot, 30000);
+    }
+}
+
+// Iniciar el bot
+startBot();

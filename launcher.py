@@ -113,6 +113,7 @@ def mostrar_menu():
     print("  [2] Ejecutar NUMEROS (Telefonos Entel)")
     print("  [3] Ejecutar SEGMENTACION (Tipo de cliente)")
     print("  [4] Ejecutar OSIPTEL (Cantidad de lineas)")
+
     print("  [5] Bot WhatsApp")
     print("  [6] Salir")
     print()
@@ -166,6 +167,8 @@ def ejecutar_osiptel():
         print(f"Error: {str(e)}")
         print("\nDetalles del error:")
         traceback.print_exc()
+
+
 
 def ejecutar_whatsapp_bot():
     print("\nIniciando Bot de WhatsApp...")
@@ -275,6 +278,8 @@ def main():
             elif opcion == "4":
                 ejecutar_osiptel()
                 input("\n\nPresiona ENTER para volver al menu...")
+            
+
             
             elif opcion == "5":
                 ejecutar_whatsapp_bot()
