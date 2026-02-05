@@ -28,19 +28,19 @@ CLARO_USERNAME = os.getenv('CLARO_USERNAME', '')
 CLARO_PASSWORD = os.getenv('CLARO_PASSWORD', '')
 CLARO_URL = os.getenv('CLARO_URL', '')
 
-ENTEL_USERNAME = os.getenv('ENTEL_USERNAME', 'ventas.admin2@entelempresa.pe')
-ENTEL_PASSWORD = os.getenv('ENTEL_PASSWORD', 'Interconexion123.')
+ENTEL_USERNAME = os.getenv('ENTEL_USERNAME', '')
+ENTEL_PASSWORD = os.getenv('ENTEL_PASSWORD', '')
 ENTEL_URL = 'https://entel.insolutions.pe/entelid-portal/Account/Login'
 
 # Segmentación (Salesforce/Claro)
 SEGMENTACION_URL = 'https://transforma.my.site.com/s/login/'
-SEGMENTACION_USERNAME = os.getenv('SEGMENTACION_USERNAME', 'usuario1h&gsolucionesdenegocios@claro.comunidad.com')
-SEGMENTACION_PASSWORD = os.getenv('SEGMENTACION_PASSWORD', 'Hgsoluciones2025+')
+SEGMENTACION_USERNAME = os.getenv('SEGMENTACION_USERNAME', '')
+SEGMENTACION_PASSWORD = os.getenv('SEGMENTACION_PASSWORD', '')
 
 # Portal Factibilidad Claro (Cobertura)
 FACTIBILIDAD_URL = 'https://172.19.90.243/portalfactibilidad/public/'
-FACTIBILIDAD_USERNAME = os.getenv('FACTIBILIDAD_USERNAME', 'D99957628')
-FACTIBILIDAD_PASSWORD = os.getenv('FACTIBILIDAD_PASSWORD', 'Europa1234*')
+FACTIBILIDAD_USERNAME = os.getenv('FACTIBILIDAD_USERNAME', '')
+FACTIBILIDAD_PASSWORD = os.getenv('FACTIBILIDAD_PASSWORD', '')
 
 # WhatsApp Bot
 WHATSAPP_SESSION_PATH = os.getenv('WHATSAPP_SESSION_PATH', './whatsapp_session')
