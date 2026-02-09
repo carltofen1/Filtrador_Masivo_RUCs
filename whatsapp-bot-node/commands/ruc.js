@@ -126,70 +126,7 @@ async function consultarSunat(ruc) {
     }
 }
 
-// Consultar ENTEL
-async function consultarEntel(ruc) {
-    let browser = null;
-    try {
-        browser = await puppeteer.launch({
-            headless: true,
-            args: ['--no-sandbox', '--disable-setuid-sandbox']
-        });
 
-        const page = await browser.newPage();
-        await page.goto(config.ENTEL_URL, { waitUntil: 'networkidle2', timeout: 30000 });
-
-        // Login
-        await page.type('#Email', config.ENTEL_USERNAME);
-        await page.type('#Password', config.ENTEL_PASSWORD);
-        await page.click('#btnLgn');
-
-        await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 });
-
-        // Ir a operaciones
-        await page.goto('https://entel.insolutions.pe/entelid-portal/Operation', { waitUntil: 'networkidle2' });
-
-        // Buscar RUC
-        await page.type('#ruc', ruc);
-        await page.click('#filter');
-
-        // Esperar resultados
-        await delay(3000);
-
-        // Extraer teléfonos
-        const telefonos = await page.evaluate(() => {
-            const info = document.querySelector('#data-table_info');
-            if (info && info.textContent.includes('0 to 0')) {
-                return null;
-            }
-
-            const tbody = document.querySelector('#data-table tbody');
-            if (!tbody) return null;
-
-            const filas = tbody.querySelectorAll('tr');
-            const tels = [];
-
-            filas.forEach(fila => {
-                const celdas = fila.querySelectorAll('td');
-                if (celdas.length >= 5) {
-                    const tel = celdas[4].textContent.trim().replace(/[\s-]/g, '');
-                    if (tel && /^\d{8,}$/.test(tel) && !tels.includes(tel)) {
-                        tels.push(tel);
-                    }
-                }
-            });
-
-            return tels.slice(-2).join(' / ');
-        });
-
-        await browser.close();
-        return telefonos;
-
-    } catch (error) {
-        if (browser) await browser.close();
-        console.error('Error ENTEL:', error.message);
-        return null;
-    }
-}
 
 module.exports = async function rucCommand(args) {
     // Extraer RUC
@@ -207,8 +144,8 @@ _El RUC debe tener 11 dígitos_`;
     console.log(`   → Consultando SUNAT para RUC ${ruc}...`);
     const datosSunat = await consultarSunat(ruc);
 
-    console.log(`   → Consultando ENTEL para RUC ${ruc}...`);
-    const telefono = await consultarEntel(ruc);
+    // Entel desactivado
+    const telefono = "Pendiente de implementación";
 
     // Formatear respuesta
     let respuesta = `*Consulta RUC: ${ruc}*\n\n`;

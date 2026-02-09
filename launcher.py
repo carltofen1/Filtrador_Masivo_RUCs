@@ -110,7 +110,7 @@ def mostrar_menu():
     print("=" * 50)
     print()
     print("  [1] Ejecutar SUNAT (Datos de empresas)")
-    print("  [2] Ejecutar NUMEROS (Telefonos Entel)")
+    print("  [2] Ejecutar DRINKY (Teléfonos Entel)")
     print("  [3] Ejecutar SEGMENTACION (Tipo de cliente)")
     print("  [4] Ejecutar OSIPTEL (Cantidad de lineas)")
 
@@ -133,16 +133,14 @@ def ejecutar_sunat():
         traceback.print_exc()
 
 def ejecutar_entel():
-    print("\nIniciando procesador de NUMEROS (Entel)...")
+    print("\nIniciando Extracción de Teléfonos (Drinky)...")
     print("-" * 40)
     try:
-        from procesar_entel_paralelo import main as entel_main
-        entel_main()
-    except Exception as e:
-        print(f"\n*** ERROR EN ENTEL ***")
-        print(f"Error: {str(e)}")
-        print("\nDetalles del error:")
-        traceback.print_exc()
+        subprocess.run([sys.executable, "procesar_drinky_paralelo.py"], check=True)
+        input("\nProceso finalizado. Presione Enter para continuar...")
+    except subprocess.CalledProcessError as e:
+        print(f"Error al ejecutar: {e}")
+        input("Presione Enter para continuar...")
 
 def ejecutar_segmentacion():
     print("\nIniciando procesador de SEGMENTACION (100% API)...")

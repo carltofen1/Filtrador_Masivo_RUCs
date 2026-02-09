@@ -73,12 +73,14 @@ def main():
     hidden_imports = [
         # Módulos principales de procesamiento
         'procesar_sunat_paralelo',
-        'procesar_entel_paralelo', 
+        'procesar_drinky_paralelo',
+ 
         'procesar_segmentacion_paralelo',
         'procesar_osiptel_paralelo',
         # Scrapers
         'modules.sunat_scraper',
-        'modules.entel_scraper',
+        'modules.drinky_scraper',
+
         'modules.segmentacion_scraper',
         'modules.osiptel_scraper',
         'modules.sheets_manager',

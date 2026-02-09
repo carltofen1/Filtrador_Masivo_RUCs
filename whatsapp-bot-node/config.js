@@ -3,10 +3,7 @@
  */
 
 module.exports = {
-    // Credenciales ENTEL (configurar en variables de entorno)
-    ENTEL_USERNAME: process.env.ENTEL_USERNAME || '',
-    ENTEL_PASSWORD: process.env.ENTEL_PASSWORD || '',
-    ENTEL_URL: 'https://entel.insolutions.pe/entelid-portal/Account/Login',
+
 
     // Credenciales Portal Factibilidad Claro (configurar en variables de entorno)
     FACTIBILIDAD_URL: 'https://172.19.90.243/portalfactibilidad/public/',
