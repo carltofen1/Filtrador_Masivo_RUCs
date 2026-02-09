@@ -28,9 +28,7 @@ CLARO_USERNAME = os.getenv('CLARO_USERNAME', '')
 CLARO_PASSWORD = os.getenv('CLARO_PASSWORD', '')
 CLARO_URL = os.getenv('CLARO_URL', '')
 
-ENTEL_USERNAME = os.getenv('ENTEL_USERNAME', '')
-ENTEL_PASSWORD = os.getenv('ENTEL_PASSWORD', '')
-ENTEL_URL = 'https://entel.insolutions.pe/entelid-portal/Account/Login'
+
 
 # Segmentación (Salesforce/Claro)
 SEGMENTACION_URL = 'https://transforma.my.site.com/s/login/'
@@ -62,6 +60,11 @@ COLUMNS = {
     'ESTADO': 10,
     'ESTADO_ENTEL': 11
 }
+
+# Configuración de Drinky (Entel)
+DRINKY_URL = os.getenv('DRINKY_URL', 'https://api-v2.drinkyn.com')
+DRINKY_EMAIL = os.getenv('DRINKY_EMAIL', '')
+DRINKY_PASSWORD = os.getenv('DRINKY_PASSWORD', '')
 
 STATUS = {
     'PENDING': 'Pendiente',

@@ -22,14 +22,14 @@ if not getattr(sys, 'frozen', False):
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from modules.sunat_scraper import SunatScraper
-from modules.entel_scraper import EntelScraper
+
 from modules.claro_cobertura_scraper import ClaroCoberturaScraper
 from modules.dni_scraper import DniScraper
 
 # Scrapers persistentes
 claro_scraper = None
 sunat_scraper = None
-entel_scraper = None
+
 dni_scraper = None
 
 # Keep-alive para mantener sesión Claro activa
@@ -100,12 +100,8 @@ def consultar_ruc(ruc):
     except Exception as e:
         print(f"Error SUNAT: {e}")
     
-    try:
-        if entel_scraper is None:
-            entel_scraper = EntelScraper()
-        telefono = entel_scraper.buscar_telefono(ruc)
-    except Exception as e:
-        print(f"Error ENTEL: {e}")
+    # Entel desactivado
+    telefono = "Pendiente de implementación"
     
     if datos:
         resultado += f"""DATOS SUNAT:
@@ -299,5 +295,4 @@ if __name__ == '__main__':
             claro_scraper.close()
         if sunat_scraper:
             sunat_scraper.close()
-        if entel_scraper:
-            entel_scraper.close()
+
