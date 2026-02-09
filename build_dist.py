@@ -99,6 +99,7 @@ def main():
         'selenium.webdriver.support.expected_conditions',
         'requests',
         'dotenv',
+        'babel.numbers',
     ]
     hidden_str = ' '.join([f'--hidden-import={h}' for h in hidden_imports])
     cmd_launcher = f'pyinstaller --onefile --clean --distpath dist --name launcher --paths="." {hidden_str} launcher.py'
