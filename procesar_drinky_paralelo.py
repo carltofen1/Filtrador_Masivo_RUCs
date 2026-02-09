@@ -25,8 +25,11 @@ def connect_gsheets():
     sheet = client.open_by_key(SPREADSHEET_ID).worksheet(SHEET_NAME)
     return sheet
 
-def process_ruc(scraper, ruc):
+
+def process_ruc(scraper, ruc, progress_info):
     """Procesa un solo RUC usando el scraper."""
+    current_idx, total_count, row_num = progress_info
+    
     try:
         # 1. Intentar con endpoint principal (Entel/Organizaciones)
         data = scraper.get_company_data(ruc)
@@ -38,39 +41,33 @@ def process_ruc(scraper, ruc):
         
         if not phones:
             # Intentar fallback a Movistar endpoint
-            # print(f"RUC {ruc}: Sin datos en Entel, buscando en Movistar...")
             mov_data = scraper.get_movistar_data(ruc)
             if mov_data and mov_data != "SIN_RESULTADOS":
-                # Extract phones from movistar data (structure is likely different or same, handling in extract_phones)
-                # We need to pass it to extract_phones. Use a wrapper dict to match expected structure?
-                # Actually extract_phones expects {'entel': ..., 'movistar': ...}
-                # But get_movistar_data likely returns the inner content directly or wrapped?
-                # Let's assume it returns the content of 'movistar' key or similar.
-                # If the endpoint is /tacto/movistar/company/RUC, it probably returns { ... data ... }
-                # Let's wrap it to match extract_phones expectation
                 phones = scraper.extract_phones({'movistar': mov_data})
 
+        prefix = f"[{current_idx}/{total_count}] RUC {ruc}:"
+        
         if phones:
             phones_str = " / ".join(phones)
             status_str = "OK"
             
             # Output limpio
-            msg = f"RUC {ruc}: {phones_str}"
+            msg = f"{prefix} {phones_str}"
             print(msg)
             return phones_str, status_str
         else:
-            print(f"RUC {ruc}: SIN RESULTADOS")
+            print(f"{prefix} SIN RESULTADOS")
             return "", "SIN REGISTRO"
 
     except Exception as e:
         logger.error(f"Error procesando RUC {ruc}: {e}")
         return "ERROR", "ERROR"
 
-def worker_task(rucs, worker_id):
+def worker_task(chunk_data, worker_id):
     """Función para cada hilo (worker)."""
-    # logger.info(f"Worker {worker_id} iniciado. Procesando {len(rucs)} RUCs.")
+    # chunk_data es ahora una lista de tuplas (ruc, progress_info)
+    # progress_info = (idx, total, row)
     
-    # Cada worker tiene su propia instancia del scraper para thread-safety
     scraper = DrinkyScraper()
     # Login inicial
     if not scraper.login():
@@ -78,13 +75,12 @@ def worker_task(rucs, worker_id):
         return []
 
     results = []
-    for ruc in rucs:
-        status = process_ruc(scraper, ruc)
+    for ruc, progress_info in chunk_data:
+        status = process_ruc(scraper, ruc, progress_info)
         results.append((ruc, status))
         time.sleep(0.5) # Pequeña pausa para no saturar
         
     scraper.close()
-    # logger.info(f"Worker {worker_id} finalizado.")
     return results
 
 def main():
@@ -166,16 +162,26 @@ def main():
         logger.info(f"Procesando {total_pending} RUCs en lotes de {GLOBAL_BATCH_SIZE}...")
         
         start_time = time.time()
+        
+        global_hits = 0
+        global_processed = 0
 
         # Iterar sobre la lista total en pasos de GLOBAL_BATCH_SIZE
         for i in range(0, total_pending, GLOBAL_BATCH_SIZE):
             batch_rucs = pending_rucs[i:i + GLOBAL_BATCH_SIZE]
             batch_rows = pending_rows[i:i + GLOBAL_BATCH_SIZE] # Filas correspondientes
             
-            # Procesar este lote en paralelo
-            # Dividir este pequeño lote entre los workers
-            chunk_size = (len(batch_rucs) + num_workers - 1) // num_workers
-            mini_chunks = [batch_rucs[j:j + chunk_size] for j in range(0, len(batch_rucs), chunk_size)]
+            # Prepare batch data with progress info
+            # We want global index, total, and row number
+            start_idx = i + 1
+            batch_data = []
+            for k in range(len(batch_rucs)):
+                # progress_info = (current_global_idx, total_pending, row_number)
+                progress_info = (start_idx + k, total_pending, batch_rows[k])
+                batch_data.append((batch_rucs[k], progress_info))
+            
+            chunk_size = (len(batch_data) + num_workers - 1) // num_workers
+            mini_chunks = [batch_data[j:j + chunk_size] for j in range(0, len(batch_data), chunk_size)]
             
             batch_results = {}
             
@@ -217,13 +223,21 @@ def main():
                     print(f"Guardado exitoso: Lote {i//GLOBAL_BATCH_SIZE + 1} ({len(updates)//2} RUCs) - Filas {first_row}-{last_row}")
                 except Exception as e:
                     logger.error(f"Error guardando lote {i}: {e}")
-                    # Podríamos implementar un retry simple aquí
-                    time.sleep(5)
-                    try:
-                        sheet.batch_update(updates)
-                        print(f"Retry guardado exitoso: Lote {i//GLOBAL_BATCH_SIZE + 1}")
-                    except Exception as e2:
-                        logger.error(f"Error fatal guardando lote {i} tras retry: {e2}")
+            
+            # Estadísticas del lote (y acumuladas)
+            batch_hits = sum(1 for status in batch_results.values() if status[0]) # status[0] is phones_str
+            total_batch = len(batch_results)
+            
+            global_hits += batch_hits
+            global_processed += total_batch
+            
+            percentage_batch = (batch_hits / total_batch * 100) if total_batch > 0 else 0
+            percentage_global = (global_hits / global_processed * 100) if global_processed > 0 else 0
+            
+            print(f"--- Fin Lote {i//GLOBAL_BATCH_SIZE + 1} ---")
+            print(f"Lote: {batch_hits}/{total_batch} ({percentage_batch:.1f}%)")
+            print(f"TOTAL ACUMULADO: {global_hits}/{global_processed} ({percentage_global:.1f}%)")
+            print("-----------------------------------")
 
             # Pequeña pausa entre lotes grandes para no saturar API de Google
             time.sleep(1)
