@@ -136,10 +136,13 @@ def ejecutar_entel():
     print("\nIniciando Extracción de Teléfonos (Drinky)...")
     print("-" * 40)
     try:
-        subprocess.run([sys.executable, "procesar_drinky_paralelo.py"], check=True)
-        input("\nProceso finalizado. Presione Enter para continuar...")
-    except subprocess.CalledProcessError as e:
-        print(f"Error al ejecutar: {e}")
+        from procesar_drinky_paralelo import main as drinky_main
+        drinky_main()
+    except Exception as e:
+        print(f"\n*** ERROR EN DRINKY ***")
+        print(f"Error: {str(e)}")
+        print("\nDetalles del error:")
+        traceback.print_exc()
         input("Presione Enter para continuar...")
 
 def ejecutar_segmentacion():
