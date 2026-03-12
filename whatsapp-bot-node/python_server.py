@@ -187,10 +187,10 @@ Coordenadas:
 Lat: {coords['lat']}
 Lng: {coords['lng']}
 
-FACC"""
+desarrollado por zentpiper"""
         else:
             error_msg = resultado.get('error', 'Sin cobertura') if resultado else 'Error'
-            return f"Resultado de cobertura:\nCobertura por Delivery: NO\n\n{error_msg}\n\nCoord: {coords['lat']}, {coords['lng']}\n\nFACC"
+            return f"Resultado de cobertura:\nCobertura por Delivery: NO\n\n{error_msg}\n\nCoord: {coords['lat']}, {coords['lng']}\n\ndesarrollado por zentpiper"
     except Exception as e:
         return f"Error: {str(e)}"
 
@@ -218,10 +218,10 @@ Coordenadas:
 Lat: {coords['lat']}
 Lng: {coords['lng']}
 
-FACC"""
+desarrollado por zentpiper"""
         else:
             error_msg = resultado.get('error', 'Sin cobertura') if resultado else 'Error'
-            return f"Resultado de cobertura:\nCobertura de Internet: NO\n\n{error_msg}\n\nCoord: {coords['lat']}, {coords['lng']}\n\nFACC"
+            return f"Resultado de cobertura:\nCobertura de Internet: NO\n\n{error_msg}\n\nCoord: {coords['lat']}, {coords['lng']}\n\ndesarrollado por zentpiper"
     except Exception as e:
         return f"Error: {str(e)}"
 
