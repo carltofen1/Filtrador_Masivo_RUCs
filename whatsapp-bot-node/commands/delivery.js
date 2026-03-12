@@ -109,7 +109,7 @@ Coordenadas:
 Lat: ${coords.lat}
 Lng: ${coords.lng}
 
-_FACC_`;
+_desarrollado por zentpiper_`;
         }
 
         // Extraer resultado
@@ -172,7 +172,7 @@ Coordenadas:
 Lat: ${coords.lat}
 Lng: ${coords.lng}
 
-_FACC_`;
+_desarrollado por zentpiper_`;
 
     } catch (error) {
         if (browser) await browser.close();

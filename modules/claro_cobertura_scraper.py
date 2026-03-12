@@ -505,7 +505,7 @@ Lng: {result.get('lng', 'N/A')}"""
 Lat: {result.get('lat', 'N/A')}
 Lng: {result.get('lng', 'N/A')}
 
-FACC"""
+desarrollado por zentpiper"""
     
     def formatear_respuesta_delivery(self, result):
         """Formatea la respuesta de delivery para WhatsApp"""
@@ -534,7 +534,7 @@ Lng: {result.get('lng', 'N/A')}"""
 Lat: {result.get('lat', 'N/A')}
 Lng: {result.get('lng', 'N/A')}
 
-FACC"""
+desarrollado por zentpiper"""
     
     def close(self):
         """Cierra el navegador"""
