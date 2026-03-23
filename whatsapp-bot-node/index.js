@@ -81,6 +81,38 @@ const COMANDOS = {
 const AUTH_PATH = path.join(BASE_PATH, '.wwebjs_auth');
 console.log('[CONFIG] Sesión en:', AUTH_PATH);
 
+// ==================== FUNCIÓN PARA LIMPIAR BLOQUEOS ====================
+/**
+ * Elimina archivos de bloqueo de Puppeteer que pueden quedar huérfanos tras un cierre inesperado
+ */
+function cleanupLocks() {
+    console.log('[CLEANUP] Verificando archivos de bloqueo de sesión...');
+    try {
+        const sessionPath = path.join(AUTH_PATH, 'session-bot-client');
+        if (fs.existsSync(sessionPath)) {
+            // Lista de archivos de bloqueo comunes en Chrome/Puppeteer
+            const lockFiles = [
+                path.join(sessionPath, 'SingletonLock'),
+                path.join(sessionPath, 'DevToolsActivePort'),
+                path.join(sessionPath, 'Default', 'LOCK')
+            ];
+
+            lockFiles.forEach(file => {
+                if (fs.existsSync(file)) {
+                    try {
+                        console.log(`[CLEANUP] Eliminando bloqueo: ${path.basename(file)}`);
+                        fs.unlinkSync(file);
+                    } catch (e) {
+                        console.log(`[CLEANUP] No se pudo eliminar ${path.basename(file)} (puede estar en uso): ${e.message}`);
+                    }
+                }
+            });
+        }
+    } catch (e) {
+        console.log(`[CLEANUP] Error durante la limpieza: ${e.message}`);
+    }
+}
+
 // ==================== FUNCIÓN PARA CREAR CLIENTE ====================
 function createClient() {
     console.log('[INIT] Creando nuevo cliente de WhatsApp...');
@@ -90,10 +122,6 @@ function createClient() {
             dataPath: AUTH_PATH,
             clientId: 'bot-client'
         }),
-        webVersionCache: {
-            type: 'remote',
-            remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.3000.1031894700-alpha.html'
-        },
         puppeteer: {
             headless: true,
             executablePath: CHROME_PATH,
@@ -295,6 +323,9 @@ async function attemptReconnect(reason) {
 
         // Configurar manejador de mensajes
         setupMessageHandler();
+
+        // Limpiar bloqueos antes de inicializar
+        cleanupLocks();
 
         // Inicializar
         console.log('[RECONNECT] Inicializando nuevo cliente...');
@@ -584,12 +615,29 @@ async function startBot() {
         // Configurar manejador de mensajes
         setupMessageHandler();
 
+        // Limpiar bloqueos antes de inicializar
+        cleanupLocks();
+
         // Inicializar
         await client.initialize();
 
     } catch (error) {
         console.log('[FATAL] Error iniciando bot:', error.message);
-        console.log('[FATAL] Reintentando en 30 segundos...');
+        
+        if (error.message.includes('browser is already running') || error.message.includes('userDataDir')) {
+            console.log();
+            console.log('--------------------------------------------------');
+            console.log('⚠️  ¡ATENCIÓN: EL NAVEGADOR PARECE ESTAR BLOQUEADO!');
+            console.log('1. Abre el Administrador de Tareas (Ctrl+Shift+Esc)');
+            console.log('2. Busca y cierra todos los procesos "Google Chrome" o "chrome.exe"');
+            console.log('3. Asegúrate de que no haya otra terminal con el bot abierto');
+            console.log('4. El bot reintentará en 30 segundos...');
+            console.log('--------------------------------------------------');
+            console.log();
+        } else {
+            console.log('[FATAL] Reintentando en 30 segundos...');
+        }
+        
         setTimeout(startBot, 30000);
     }
 }

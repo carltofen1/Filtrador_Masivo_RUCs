@@ -257,6 +257,12 @@ def ejecutar_whatsapp_bot():
         print(f"Error: {str(e)}")
         print("\nDetalles del error:")
         traceback.print_exc()
+        
+        if "browser is already running" in str(e).lower() or "userDataDir" in str(e):
+             print("\n💡 TIP: Abre el Administrador de Tareas y cierra todos los procesos 'chrome.exe'.")
+             print("Luego intenta de nuevo.")
+             
+        input("\nPresiona ENTER para volver al menú...")
 
 def main():
     try:
