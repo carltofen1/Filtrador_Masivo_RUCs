@@ -59,6 +59,21 @@ class SunatScraper:
     """
     
     MAX_RETRIES = 3
+    # Extrae de la página de resultados los h4 y cada recuadro con su primer valor
+    _JS_RESULTADOS = (
+        "return {"
+        " h4: [...document.querySelectorAll('h4.list-group-item-heading')].map(e => e.innerText.trim()),"
+        " items: [...document.querySelectorAll('.list-group-item')].map(d => {"
+        "   const p = d.querySelector('p.list-group-item-text');"
+        "   return {t: d.innerText, p: p ? p.innerText : '', hasP: !!p};"
+        " })"
+        "};"
+    )
+    URLS_BLOQUEADAS = [
+        '*site24x7*', '*ruxitagentjs*', '*oss.maxcdn.com*', '*192.168.*',
+        '*google-analytics.com*', '*googletagmanager.com*',
+        '*.woff*', '*.ttf*', '*.png*', '*.jpg*', '*.gif*', '*.ico*',
+    ]
     WAIT_TIMEOUT = 12  # segundos para WebDriverWait
     PAGE_LOAD_TIMEOUT = 15
     
@@ -79,6 +94,7 @@ class SunatScraper:
         self.url_base = "https://e-consultaruc.sunat.gob.pe/cl-ti-itmrconsruc/jcrS00Alias"
         self._page_loaded = False  # Track si ya tenemos la página cargada
         self._consecutive_errors = 0
+        self._busqueda_directa_ok = False  # True tras la primera consulta exitosa
         
     def _init_driver(self):
         """Inicializa Chrome con undetected-chromedriver (evita la detección de Cloudflare)."""
@@ -104,6 +120,7 @@ class SunatScraper:
             'profile.managed_default_content_settings.images': 2,
             'profile.default_content_setting_values.notifications': 2,
         })
+        # Ojo: page_load_strategy='eager' hace que Cloudflare bloquee; no usarlo.
 
         # uc parchea el chromedriver en disco: con varios workers en paralelo
         # se serializa la creación para que no se pisen entre ellos.
@@ -118,6 +135,13 @@ class SunatScraper:
 
         self.driver.set_page_load_timeout(self.PAGE_LOAD_TIMEOUT)
 
+        # Scripts de monitoreo/analítica de terceros que la página carga y no hacen falta
+        try:
+            self.driver.execute_cdp_cmd('Network.enable', {})
+            self.driver.execute_cdp_cmd('Network.setBlockedURLs', {'urls': self.URLS_BLOQUEADAS})
+        except WebDriverException:
+            pass
+
         self.wait = WebDriverWait(
             self.driver, self.WAIT_TIMEOUT,
             ignored_exceptions=[StaleElementReferenceException]
@@ -125,6 +149,31 @@ class SunatScraper:
         self._page_loaded = False
         print("Chrome (undetected) inicializado (headless)" if self.headless else "Chrome (undetected) inicializado")
     
+    def _enviar_busqueda_directa(self, ruc: str):
+        """
+        Envía por POST el mismo formulario que arma la página de búsqueda
+        (accion=consPorRuc). El token de reCAPTCHA de SUNAT es un valor aleatorio
+        generado en el navegador, así que no hace falta recargar el formulario:
+        ahorra una carga de página por RUC.
+        """
+        pagina_anterior = self.driver.find_element(By.TAG_NAME, 'html')
+        self.driver.execute_script(
+            "const [url, ruc] = arguments;"
+            "let token = ''; while (token.length < 52) token += Math.random().toString(36).substring(2);"
+            "const campos = {accion: 'consPorRuc', razSoc: '', nroRuc: ruc, nrodoc: '',"
+            "  token: token.substring(0, 52), contexto: 'ti-it', modo: '1', rbtnTipo: '1',"
+            "  search1: ruc, tipdoc: '1', search2: '', search3: '', codigo: ''};"
+            "const f = document.createElement('form'); f.method = 'post'; f.action = url;"
+            "for (const [k, v] of Object.entries(campos)) {"
+            "  const i = document.createElement('input'); i.type = 'hidden'; i.name = k; i.value = v;"
+            "  f.appendChild(i); }"
+            "document.body.appendChild(f); HTMLFormElement.prototype.submit.call(f);",
+            self.url_base, ruc
+        )
+        # Esperar a que la página anterior se vaya (si no, el h4 viejo daría un falso positivo)
+        WebDriverWait(self.driver, self.WAIT_TIMEOUT).until(EC.staleness_of(pagina_anterior))
+        self._verificar_bloqueo()
+
     def _escribir(self, elemento, texto: str):
         """
         Escribe texto en un input. Con el chromedriver parchado por undetected-chromedriver
@@ -250,19 +299,18 @@ class SunatScraper:
                 else:
                     print(f"Reintentando RUC {ruc} (intento {intento + 1}/{self.MAX_RETRIES})")
                 
-                # Siempre navegar de nuevo para resetear el estado del formulario
-                self._navigate_to_search()
-                
-                # Ingresar RUC en el campo de búsqueda
-                input_ruc = self.driver.find_element(By.ID, "txtRuc")
-                self._escribir(input_ruc, ruc)
-                
-                # Verificar CAPTCHA
-                self._handle_captcha()
-                
-                # Buscar
-                btn_buscar = self.driver.find_element(By.ID, "btnAceptar")
-                self._clic(btn_buscar)
+                if intento == 0 and self._busqueda_directa_ok:
+                    # Ya estamos en SUNAT: enviar la búsqueda sin recargar el formulario
+                    self._enviar_busqueda_directa(ruc)
+                else:
+                    # Camino clásico: cargar el formulario, escribir el RUC y pulsar Buscar
+                    self._busqueda_directa_ok = False
+                    self._navigate_to_search()
+                    input_ruc = self.driver.find_element(By.ID, "txtRuc")
+                    self._escribir(input_ruc, ruc)
+                    self._handle_captcha()
+                    btn_buscar = self.driver.find_element(By.ID, "btnAceptar")
+                    self._clic(btn_buscar)
                 
                 # Esperar resultados
                 try:
@@ -286,6 +334,7 @@ class SunatScraper:
                     
                     print(f"  → {resultado['razon_social']}")
                     self._consecutive_errors = 0
+                    self._busqueda_directa_ok = True
                     return resultado
                 else:
                     print("No se pudieron extraer datos")
@@ -339,8 +388,8 @@ class SunatScraper:
         """
         Extrae todos los datos de la página de resultados en una sola pasada.
         
-        Optimizado: hace un solo find_elements para obtener todos los divs
-        y los procesa en memoria, en lugar de múltiples queries al DOM.
+        Optimizado: una sola llamada JS trae los h4 y todos los recuadros,
+        que luego se procesan en memoria.
         """
         try:
             es_persona_natural = ruc.startswith('10')
@@ -358,81 +407,41 @@ class SunatScraper:
                 'estado_contribuyente': 'DESCONOCIDO',
             }
             
+            # Una sola llamada al navegador trae todo el DOM relevante
+            # (antes eran 2-3 round-trips de WebDriver por cada recuadro).
+            dom = self.driver.execute_script(self._JS_RESULTADOS) or {}
+
             # --- Razón Social (del h4) ---
-            try:
-                h4_elements = self.driver.find_elements(By.CSS_SELECTOR, "h4.list-group-item-heading")
-                target_h4 = None
-                
-                for h4 in h4_elements:
-                    texto = h4.text.strip()
-                    if texto.startswith(ruc):
-                        target_h4 = h4
-                        break
-                
-                if not target_h4:
-                    for h4 in h4_elements:
-                        if ruc in h4.text:
-                            target_h4 = h4
-                            break
-                
-                if not target_h4 and h4_elements:
-                    target_h4 = h4_elements[0]
-                
-                if target_h4:
-                    texto_completo = target_h4.text.strip()
-                    if ' - ' in texto_completo:
-                        resultado['razon_social'] = texto_completo.split(' - ', 1)[1].strip()
-                    else:
-                        resultado['razon_social'] = texto_completo
-            except Exception as e:
-                print(f"  No se pudo extraer Razón Social: {e}")
-            
-            # --- Extraer todos los list-group-item de una sola vez ---
-            all_divs = self.driver.find_elements(By.CLASS_NAME, "list-group-item")
-            
-            for div in all_divs:
-                try:
-                    div_text = div.text
-                except StaleElementReferenceException:
-                    continue
-                
-                # Domicilio Fiscal
+            h4s = dom.get('h4') or []
+            texto_completo = (
+                next((t for t in h4s if t.startswith(ruc)), None)
+                or next((t for t in h4s if ruc in t), None)
+                or (h4s[0] if h4s else '')
+            )
+            if ' - ' in texto_completo:
+                resultado['razon_social'] = texto_completo.split(' - ', 1)[1].strip()
+            else:
+                resultado['razon_social'] = texto_completo
+
+            # --- Recuadros (list-group-item): etiqueta + primer <p> de valor ---
+            for item in dom.get('items') or []:
+                div_text, valor = item.get('t') or '', (item.get('p') or '').strip()
                 if "Domicilio Fiscal:" in div_text:
-                    try:
-                        p_el = div.find_element(By.CSS_SELECTOR, "p.list-group-item-text")
-                        self._parsear_direccion(p_el.text.strip(), resultado)
-                    except (NoSuchElementException, StaleElementReferenceException):
-                        pass
-                
-                # Estado del Contribuyente
+                    if item.get('hasP'):
+                        self._parsear_direccion(valor, resultado)
                 elif "Estado del Contribuyente:" in div_text:
-                    try:
-                        p_el = div.find_element(By.CSS_SELECTOR, "p.list-group-item-text")
-                        resultado['estado_contribuyente'] = p_el.text.strip().upper()
-                    except (NoSuchElementException, StaleElementReferenceException):
-                        pass
-                
-                # Tipo de Documento (solo para persona natural)
+                    if item.get('hasP'):
+                        resultado['estado_contribuyente'] = valor.upper()
                 elif es_persona_natural and "Tipo de Documento:" in div_text:
-                    try:
-                        p_el = div.find_element(By.CSS_SELECTOR, "p.list-group-item-text")
-                        texto_documento = p_el.text.strip()
-                        # Formato: "DNI 70450683 - POZSGAI ACOSTA, PATRICK LAZSLO ARJUNA"
-                        if ' - ' in texto_documento:
-                            partes = texto_documento.split(' - ', 1)
-                            resultado['documento_identidad'] = partes[0].strip()
-                            resultado['representante_legal'] = partes[1].strip()
-                    except (NoSuchElementException, StaleElementReferenceException):
-                        pass
-                
-                # Tipo Contribuyente
+                    # Formato: "DNI 70450683 - APELLIDOS, NOMBRES"
+                    if ' - ' in valor:
+                        partes = valor.split(' - ', 1)
+                        resultado['documento_identidad'] = partes[0].strip()
+                        resultado['representante_legal'] = partes[1].strip()
                 elif "Tipo Contribuyente:" in div_text:
-                    try:
-                        p_el = div.find_element(By.CSS_SELECTOR, "p.list-group-item-text")
-                        resultado['tipo_contribuyente'] = p_el.text.strip()
-                    except (NoSuchElementException, StaleElementReferenceException):
-                        pass
-            
+                    if item.get('hasP'):
+                        resultado['tipo_contribuyente'] = valor
+
             # Marcar persona natural
             if es_persona_natural:
                 resultado['es_persona_natural'] = True
@@ -481,18 +490,15 @@ class SunatScraper:
     def _extraer_representante_legal(self, resultado: Dict):
         """Extrae el representante legal haciendo click en el botón correspondiente."""
         try:
-            # Verificar si existe el botón de representantes legales
-            try:
-                btn_rep_legal = self.wait.until(
-                    EC.element_to_be_clickable((By.CSS_SELECTOR, "button.btnInfRepLeg"))
-                )
-            except TimeoutException:
-                # No tiene representantes legales registrados
+            # La página de resultados ya cargó: si no hay botón, la empresa no tiene
+            # representantes registrados (antes se esperaban 12 s inútilmente).
+            botones = self.driver.find_elements(By.CSS_SELECTOR, "button.btnInfRepLeg")
+            if not botones:
                 resultado['sin_representante'] = True
                 return
-            
-            self._clic(btn_rep_legal)
-            
+
+            self._clic(botones[0])
+
             # Esperar a que aparezca la tabla de representantes
             try:
                 WebDriverWait(self.driver, 5).until(
@@ -501,22 +507,18 @@ class SunatScraper:
             except TimeoutException:
                 resultado['sin_representante'] = True
                 return
-            
-            tbody = self.driver.find_element(By.TAG_NAME, "tbody")
-            filas = tbody.find_elements(By.TAG_NAME, "tr")
-            
-            for fila in filas:
-                celdas = fila.find_elements(By.TAG_NAME, "td")
-                
-                if len(celdas) >= 3:
-                    tipo_doc = celdas[0].text.strip()
-                    num_doc = celdas[1].text.strip()
-                    nombre = celdas[2].text.strip()
-                    
-                    resultado['representante_legal'] = nombre
-                    resultado['documento_identidad'] = f"{tipo_doc} {num_doc}"
-                    break  # Solo el primero
-                    
+
+            fila = self.driver.execute_script(
+                "const t=document.querySelector('tbody'); if(!t) return null;"
+                "for (const tr of t.querySelectorAll('tr')) {"
+                "  const c=[...tr.querySelectorAll('td')].map(td=>td.innerText.trim());"
+                "  if (c.length>=3) return c; }"
+                "return null;"
+            )
+            if fila:
+                resultado['representante_legal'] = fila[2]
+                resultado['documento_identidad'] = f"{fila[0]} {fila[1]}"
+
         except Exception as e:
             print(f"  No se pudo extraer Representante Legal: {e}")
     

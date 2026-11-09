@@ -1,6 +1,5 @@
 import gspread
 from google.oauth2.service_account import Credentials
-import pandas as pd
 import time
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -63,32 +62,33 @@ def process_ruc(scraper, ruc, progress_info):
         logger.error(f"Error procesando RUC {ruc}: {e}")
         return "ERROR", "ERROR"
 
-def worker_task(chunk_data, worker_id):
-    """Función para cada hilo (worker)."""
-    # chunk_data es ahora una lista de tuplas (ruc, progress_info)
-    # progress_info = (idx, total, row)
-    
-    scraper = DrinkyScraper()
-    # Login inicial
-    if not scraper.login():
-        logger.error(f"Worker {worker_id} no pudo iniciar sesión. Abortando.")
-        return []
-
+def worker_task(scraper, chunk_data):
+    """Función para cada hilo (worker). chunk_data = [(ruc, (idx, total, row)), ...]"""
     results = []
     for ruc, progress_info in chunk_data:
         status = process_ruc(scraper, ruc, progress_info)
         results.append((ruc, status))
         time.sleep(0.5) # Pequeña pausa para no saturar
-        
-    scraper.close()
     return results
+
+
+def crear_scrapers(n):
+    """Crea y loguea n sesiones UNA sola vez (antes se re-logueaba cada lote de 50)."""
+    scrapers = []
+    for i in range(n):
+        scraper = DrinkyScraper()
+        if scraper.login():
+            scrapers.append(scraper)
+        else:
+            logger.error(f"Worker {i + 1} no pudo iniciar sesión.")
+    return scrapers
 
 def main():
     import argparse
     parser = argparse.ArgumentParser(description='Procesar RUCs de Drinky en paralelo.')
     parser.add_argument('--limit', type=int, help='Límite de RUCs a procesar (para pruebas)')
     parser.add_argument('--ruc', type=str, help='Procesar un único RUC específico (Debug)')
-    args = parser.parse_args()
+    args, _ = parser.parse_known_args()
 
     print("Iniciando procesamiento PARALELO de Drinky (Entel)...", flush=True)
     
@@ -97,7 +97,7 @@ def main():
         print(f"Modo DEBUG: Procesando único RUC {args.ruc}")
         scraper = DrinkyScraper()
         if scraper.login():
-            phones, status = process_ruc(scraper, args.ruc)
+            phones, status = process_ruc(scraper, args.ruc, (1, 1, 0))
             print(f"Resultado final: {phones} | {status}")
             scraper.close()
         else:
@@ -107,7 +107,6 @@ def main():
     try:
         sheet = connect_gsheets()
         data = sheet.get_all_values()
-        df = pd.DataFrame(data[1:], columns=data[0]) 
         
         # Identificar columnas
         col_ruc_idx = COLUMNS['RUC']
@@ -162,7 +161,13 @@ def main():
         logger.info(f"Procesando {total_pending} RUCs en lotes de {GLOBAL_BATCH_SIZE}...")
         
         start_time = time.time()
-        
+
+        scrapers = crear_scrapers(num_workers)
+        if not scrapers:
+            print("Error: ningún worker pudo iniciar sesión en Drinky.")
+            return
+        num_workers = len(scrapers)
+
         global_hits = 0
         global_processed = 0
 
@@ -187,7 +192,7 @@ def main():
             
             with ThreadPoolExecutor(max_workers=num_workers) as executor:
                 # Submit tasks for this batch
-                future_to_worker = {executor.submit(worker_task, chunk, idx+1): idx for idx, chunk in enumerate(mini_chunks)}
+                future_to_worker = {executor.submit(worker_task, scrapers[idx], chunk): idx for idx, chunk in enumerate(mini_chunks)}
                 
                 for future in as_completed(future_to_worker):
                      try:
@@ -241,6 +246,9 @@ def main():
 
             # Pequeña pausa entre lotes grandes para no saturar API de Google
             time.sleep(1)
+
+        for scraper in scrapers:
+            scraper.close()
 
         elapsed_time = time.time() - start_time
         print(f"Procesamiento completado en {elapsed_time:.2f} segundos.")

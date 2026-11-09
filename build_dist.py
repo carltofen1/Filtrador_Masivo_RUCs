@@ -31,7 +31,6 @@ HIDDEN_IMPORTS_LAUNCHER = [
     # Scrapers
     'modules.sunat_scraper',
     'modules.drinky_scraper',
-    'modules.segmentacion_scraper',
     'modules.osiptel_scraper',
     'modules.sheets_manager',
     'modules.dni_scraper',
@@ -46,12 +45,16 @@ HIDDEN_IMPORTS_LAUNCHER = [
     'selenium.webdriver.common.by',
     'selenium.webdriver.support.ui',
     'selenium.webdriver.support.expected_conditions',
+    'undetected_chromedriver',
     'requests',
     'dotenv',
 ]
 
-# Paquetes pesados que ningún scraper usa (PyInstaller los arrastra si están instalados)
-EXCLUDES = ['scipy', 'matplotlib', 'tkinter', 'IPython', 'notebook', 'pytest']
+# Paquetes que ningún scraper importa pero PyInstaller arrastra si están instalados
+# (pandas + numpy solos eran ~55 MB). Verificado importando todos los procesadores.
+EXCLUDES = ['scipy', 'matplotlib', 'tkinter', 'IPython', 'notebook', 'pytest',
+            'pandas', 'numpy', 'PIL', 'lxml', 'sqlite3', 'yaml', 'jinja2', 'markupsafe',
+            'pytz', 'dateutil', 'bs4', 'pydoc_data']
 
 
 def log(message):
@@ -155,7 +158,8 @@ def build_bot():
     if not asegurar_pkg():
         return False
     force_remove(os.path.join(DIST, "bot.exe"))
-    if run_command('npx pkg . -t node18-win-x64 --output ../dist/bot.exe',
+    # --compress Brotli reduce bastante el .exe a cambio de ~1 s más al arrancar
+    if run_command('npx pkg . -t node18-win-x64 --compress Brotli --output ../dist/bot.exe',
                    "Build Node Bot", cwd="whatsapp-bot-node"):
         return True
 

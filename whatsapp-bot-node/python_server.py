@@ -5,7 +5,6 @@ Mantiene los navegadores abiertos y recibe comandos por HTTP
 """
 import sys
 import os
-import io
 import re
 import json
 import time
@@ -13,9 +12,13 @@ import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import contextlib
 
-# Forzar UTF-8
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
-sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+# Forzar UTF-8 y escribir línea por línea (si no, server.log queda vacío hasta
+# que se llena el buffer, porque el launcher redirige la salida a un archivo)
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding='utf-8', line_buffering=True)
+    except Exception:
+        pass
 
 # Path para imports (Solo si corremos como script, no congelado)
 if not getattr(sys, 'frozen', False):
