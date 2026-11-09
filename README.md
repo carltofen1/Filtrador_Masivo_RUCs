@@ -1,7 +1,7 @@
 # Filtrador Masivo de RUCs
 
 Herramienta para completar un Google Sheet de empresas peruanas a partir de su RUC:
-datos de SUNAT, teléfonos (Drinky/Entel), segmentación, líneas OSIPTEL y un bot de WhatsApp
+datos de SUNAT, teléfonos (Drinky/Entel), segmentación y un bot de WhatsApp
 para consultas puntuales.
 
 ## Uso
@@ -13,8 +13,7 @@ Ejecuta `dist/launcher.exe` (o `python launcher.py` en desarrollo) y elige en el
 | 1 | `procesar_sunat_paralelo.py` | Razón social, representante, dirección y estado (5 workers) |
 | 2 | `procesar_drinky_paralelo.py` | Teléfonos vía API de Drinky (Entel / Movistar) |
 | 3 | `procesar_segmentacion_api.py` | Tipo de cliente (100 % API) |
-| 4 | `procesar_osiptel_paralelo.py` | Cantidad de líneas en OSIPTEL |
-| 5 | `whatsapp-bot-node/` + `python_server.py` | Bot de WhatsApp (`server.exe` + `bot.exe`) |
+| 4 | `whatsapp-bot-node/` + `python_server.py` | Bot de WhatsApp (`server.exe` + `bot.exe`) |
 
 Scripts sueltos:
 - `procesar_razon_social.py`: busca el RUC a partir de la razón social.
@@ -59,7 +58,6 @@ procesar_*.py                procesadores masivos (Google Sheets)
 modules/
   sunat_scraper.py           SUNAT (undetected-chromedriver)
   drinky_scraper.py          API Drinky
-  osiptel_scraper.py         OSIPTEL (Selenium)
   claro_cobertura_scraper.py cobertura Claro (bot)
   dni_scraper.py             APIs de DNI (bot)
   sheets_manager.py          lectura/escritura en batch del Sheet

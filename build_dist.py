@@ -27,11 +27,9 @@ HIDDEN_IMPORTS_LAUNCHER = [
     'procesar_sunat_paralelo',
     'procesar_drinky_paralelo',
     'procesar_segmentacion_api',
-    'procesar_osiptel_paralelo',
     # Scrapers
     'modules.sunat_scraper',
     'modules.drinky_scraper',
-    'modules.osiptel_scraper',
     'modules.sheets_manager',
     'modules.dni_scraper',
     # Config

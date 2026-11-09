@@ -112,10 +112,8 @@ def mostrar_menu():
     print("  [1] Ejecutar SUNAT (Datos de empresas)")
     print("  [2] Ejecutar DRINKY (Teléfonos Entel)")
     print("  [3] Ejecutar SEGMENTACION (Tipo de cliente)")
-    print("  [4] Ejecutar OSIPTEL (Cantidad de lineas)")
-
-    print("  [5] Bot WhatsApp")
-    print("  [6] Salir")
+    print("  [4] Bot WhatsApp")
+    print("  [5] Salir")
     print()
     print("=" * 50)
     print()
@@ -156,20 +154,6 @@ def ejecutar_segmentacion():
         print(f"Error: {str(e)}")
         print("\nDetalles del error:")
         traceback.print_exc()
-
-def ejecutar_osiptel():
-    print("\nIniciando procesador de OSIPTEL...")
-    print("-" * 40)
-    try:
-        from procesar_osiptel_paralelo import main as osiptel_main
-        osiptel_main()
-    except Exception as e:
-        print(f"\n*** ERROR EN OSIPTEL ***")
-        print(f"Error: {str(e)}")
-        print("\nDetalles del error:")
-        traceback.print_exc()
-
-
 
 def ejecutar_whatsapp_bot():
     print("\nIniciando Bot de WhatsApp...")
@@ -268,7 +252,7 @@ def main():
     try:
         while True:
             mostrar_menu()
-            opcion = input("Selecciona una opcion (1-6): ").strip()
+            opcion = input("Selecciona una opcion (1-5): ").strip()
             
             if opcion == "1":
                 ejecutar_sunat()
@@ -283,16 +267,10 @@ def main():
                 input("\n\nPresiona ENTER para volver al menu...")
             
             elif opcion == "4":
-                ejecutar_osiptel()
-                input("\n\nPresiona ENTER para volver al menu...")
-            
-
-            
-            elif opcion == "5":
                 ejecutar_whatsapp_bot()
                 input("\n\nPresiona ENTER para volver al menu...")
             
-            elif opcion == "6":
+            elif opcion == "5":
                 print("\n¡Hasta luego!")
                 sys.exit(0)
             
