@@ -42,6 +42,61 @@ def _chrome_paths() -> Dict[str, str]:
     return _CHROME_PATHS
 
 
+def _ocultar_de_barra_de_tareas(pid: Optional[int], espera: float = 5.0) -> int:
+    """
+    Quita de la barra de tareas (y de Alt+Tab) las ventanas del Chrome con ese PID.
+    La ventana sigue existiendo fuera de la pantalla, así que para Chrome y para
+    Cloudflare es una ventana normal; solo se le marca como "ventana de herramienta".
+    Devuelve cuántas ventanas ocultó.
+    """
+    if sys.platform != 'win32' or not pid:
+        return 0
+    import ctypes
+    from ctypes import wintypes
+
+    user32 = ctypes.windll.user32
+    GWL_EXSTYLE, WS_EX_TOOLWINDOW, WS_EX_APPWINDOW = -20, 0x00000080, 0x00040000
+    SW_HIDE, SW_SHOWNOACTIVATE = 0, 4
+    user32.GetWindowLongPtrW.restype = ctypes.c_ssize_t
+    user32.GetWindowLongPtrW.argtypes = [wintypes.HWND, ctypes.c_int]
+    user32.SetWindowLongPtrW.restype = ctypes.c_ssize_t
+    user32.SetWindowLongPtrW.argtypes = [wintypes.HWND, ctypes.c_int, ctypes.c_ssize_t]
+    EnumWindowsProc = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+
+    def ventanas_de_chrome():
+        encontradas = []
+
+        def cb(hwnd, _):
+            dueño = wintypes.DWORD()
+            user32.GetWindowThreadProcessId(hwnd, ctypes.byref(dueño))
+            if dueño.value == pid and user32.IsWindowVisible(hwnd):
+                clase = ctypes.create_unicode_buffer(64)
+                user32.GetClassNameW(hwnd, clase, 64)
+                if clase.value == 'Chrome_WidgetWin_1':
+                    encontradas.append(hwnd)
+            return True
+
+        user32.EnumWindows(EnumWindowsProc(cb), 0)
+        return encontradas
+
+    ocultadas = 0
+    limite = time.time() + espera
+    while time.time() < limite:
+        for hwnd in ventanas_de_chrome():
+            ex = user32.GetWindowLongPtrW(hwnd, GWL_EXSTYLE)
+            if ex & WS_EX_TOOLWINDOW:
+                continue
+            # El cambio de estilo solo se refleja en la barra si la ventana se re-muestra
+            user32.ShowWindow(hwnd, SW_HIDE)
+            user32.SetWindowLongPtrW(hwnd, GWL_EXSTYLE, (ex | WS_EX_TOOLWINDOW) & ~WS_EX_APPWINDOW)
+            user32.ShowWindow(hwnd, SW_SHOWNOACTIVATE)
+            ocultadas += 1
+        if ocultadas:
+            return ocultadas
+        time.sleep(0.2)
+    return ocultadas
+
+
 class SunatBloqueadoError(Exception):
     """SUNAT respondió con un challenge/bloqueo anti-bots (Cloudflare) en vez de la página."""
 
@@ -132,6 +187,12 @@ class SunatScraper:
                 driver_executable_path=rutas['driver_path'],
                 use_subprocess=True,
             )
+
+        if not self.headless:
+            try:
+                _ocultar_de_barra_de_tareas(getattr(self.driver, 'browser_pid', None))
+            except Exception as e:
+                print(f"  (no se pudo ocultar Chrome de la barra de tareas: {e})")
 
         self.driver.set_page_load_timeout(self.PAGE_LOAD_TIMEOUT)
 
