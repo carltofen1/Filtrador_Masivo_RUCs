@@ -1,13 +1,15 @@
 import time
 from modules.sheets_manager import SheetsManager
-from modules.sunat_scraper import SunatScraper
+from modules.sunat_scraper import SunatScraper, SunatBloqueadoError
 import config
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from threading import Lock
+from threading import Lock, Event
 
 # Lock y cola compartida para acumular todos los updates
 sheets_lock = Lock()
 global_updates = []
+# Si SUNAT bloquea (Cloudflare), todos los workers paran y no se escriben errores
+sunat_bloqueada = Event()
 
 def procesar_worker(worker_id, rucs_asignados, sheets):
     """
@@ -22,14 +24,23 @@ def procesar_worker(worker_id, rucs_asignados, sheets):
     
     try:
         for idx, ruc_data in enumerate(rucs_asignados, 1):
+            if sunat_bloqueada.is_set():
+                break
             ruc = ruc_data['ruc']
             row = ruc_data['row']
-            
+
             print(f"[Worker {worker_id}] {idx}/{len(rucs_asignados)}: RUC {ruc}")
-            
+
             try:
-                sunat_data = sunat.consultar_ruc(ruc)
-                
+                try:
+                    sunat_data = sunat.consultar_ruc(ruc)
+                except SunatBloqueadoError as e:
+                    # No se escribe nada en el Sheet: el RUC queda pendiente
+                    if not sunat_bloqueada.is_set():
+                        print(f"\n[Worker {worker_id}] ✗ {e}")
+                    sunat_bloqueada.set()
+                    break
+
                 if not sunat_data:
                     with sheets_lock:
                         global_updates.append({
@@ -93,6 +104,7 @@ def main():
     
     print("\nConectando a Google Sheets...")
     sheets = SheetsManager()
+    sunat_bloqueada.clear()
     
     try:
         sheets.initialize_headers()
@@ -167,6 +179,10 @@ def main():
             print(f"Tasa de éxito: {(total_processed/total_rucs)*100:.2f}%")
         print(f"Tiempo total: {total_time/60:.2f} minutos ({total_time/3600:.2f} horas)")
         print(f"Velocidad: {total_time/total_rucs:.2f} segundos por RUC")
+        if sunat_bloqueada.is_set():
+            print("\n⚠ PROCESO DETENIDO: SUNAT está bloqueando el navegador automatizado (Cloudflare).")
+            print("  Los RUCs que faltaban NO se marcaron como error: siguen pendientes en el Sheet.")
+            print("  Vuelve a ejecutar cuando SUNAT quite el bloqueo.")
         print("=" * 60)
         
     except KeyboardInterrupt:

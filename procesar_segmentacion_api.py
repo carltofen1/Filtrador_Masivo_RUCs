@@ -31,7 +31,7 @@ class AuraSegmentacionAPI:
         self.session = requests.Session()
         
         self.session.headers.update({
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36',
             'Accept': '*/*',
             'Accept-Language': 'es-419,es;q=0.9,en;q=0.8',
             'Origin': self.BASE_URL,
@@ -44,15 +44,26 @@ class AuraSegmentacionAPI:
         self.fwuid = None
         self.aura_token = None
         self.logged_in = False
-        
+        # Hash de la app communityApp. Salesforce lo cambia en cada release;
+        # antes estaba fijo en el código y eso rompía las búsquedas.
+        self.app_hash = "REQUIRED"
+        self._relogin_lock = Lock()
+
     def _extract_tokens_from_html(self, html, context_source="Unknown"):
-        """Extrae fwuid y aura.token del HTML y cookies."""
-        
+        """Extrae fwuid, hash de la app y aura.token del HTML y cookies."""
+
         # FWUID
         fwuid_match = re.search(r'"fwuid"\s*:\s*"([^"]+)"', html)
         if fwuid_match:
             self.fwuid = fwuid_match.group(1)
-            
+
+        # Hash actual de siteforce:communityApp (solo existe tras el login)
+        app_match = re.search(
+            r'"APPLICATION@markup://siteforce:communityApp"\s*:\s*"([^"]+)"', html
+        )
+        if app_match:
+            self.app_hash = app_match.group(1)
+
         # Aura Token - primero buscar en HTML
         token_match = re.search(r'aura\.token\s*=\s*"(eyJ[^"]+)"', html)
         if not token_match:
@@ -201,11 +212,46 @@ class AuraSegmentacionAPI:
             traceback.print_exc()
             return False
 
+    def _parse_aura(self, text):
+        """
+        Interpreta la respuesta de Aura. Devuelve (json|None, estado) donde estado es
+        'ok', 'out_of_sync' (cambió la versión de Salesforce) o 'invalid_session'.
+        """
+        if 'aura:invalidSession' in text or 'INVALID_SESSION' in text:
+            return None, 'invalid_session'
+        if 'aura:clientOutOfSync' in text:
+            # Salesforce manda el fwuid nuevo en el propio error
+            m = re.search(r'"fwuid"\s*:\s*"([^"]+)"', text)
+            if m:
+                self.fwuid = m.group(1)
+            m = re.search(r'"APPLICATION@markup://siteforce:communityApp"\s*:\s*"([^"]+)"', text)
+            self.app_hash = m.group(1) if m else "REQUIRED"
+            return None, 'out_of_sync'
+        clean = text.strip()
+        if clean.startswith('while(1);'):
+            clean = clean[len('while(1);'):]
+        clean = re.sub(r'^\*/|/\*ERROR\*/$', '', clean.strip())
+        try:
+            return json.loads(clean), 'ok'
+        except ValueError:
+            return None, 'invalid_session' if '<html' in clean[:500].lower() else 'error'
+
+    def relogin(self):
+        """Re-login thread-safe (varios workers comparten la misma sesión)."""
+        with self._relogin_lock:
+            print("[Login] Sesión expirada o desfasada, relogueando...")
+            self.session.cookies.clear()
+            self.fwuid = None
+            self.aura_token = None
+            self.app_hash = "REQUIRED"
+            self.logged_in = False
+            return self.login()
+
     def search_ruc(self, ruc):
         """Busca un RUC usando ScopedResultsDataProviderController."""
         if not self.logged_in:
             return None
-        
+
         try:
             descriptor = "serviceComponent://ui.search.components.forcesearch.scopedresultsdataprovider.ScopedResultsDataProviderController/ACTION$getItems"
             
@@ -235,26 +281,34 @@ class AuraSegmentacionAPI:
             
             context_json = {
                 "mode": "PROD", "fwuid": self.fwuid, "app": "siteforce:communityApp",
-                "loaded": {"APPLICATION@markup://siteforce:communityApp": "1421_mg1QpGWKsu060_sD-hU2fg"},
+                "loaded": {"APPLICATION@markup://siteforce:communityApp": self.app_hash},
                 "dn": [], "globals": {}, "uad": True
             }
-            
+
             form_data = {
                 "message": json.dumps({"actions": actions}),
                 "aura.context": json.dumps(context_json),
                 "aura.pageURI": f"/s/global-search/{ruc}",
                 "aura.token": self.aura_token
             }
-            
+
             response = self.session.post(
                 f"{self.BASE_URL}/s/sfsites/aura",
                 data=form_data,
                 headers={"Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"},
                 timeout=30
             )
-            
+
+            if response.status_code in (401, 403):
+                return "INVALID_SESSION"
             if response.status_code == 200:
-                data = response.json()
+                data, estado = self._parse_aura(response.text)
+                if estado == 'out_of_sync':
+                    return "OUT_OF_SYNC"
+                if estado == 'invalid_session':
+                    return "INVALID_SESSION"
+                if data is None:
+                    return None
                 for action in data.get("actions", []):
                     if action.get("state") == "SUCCESS":
                         results = action.get("returnValue", {}).get("result", [])
@@ -294,28 +348,36 @@ class AuraSegmentacionAPI:
 
             context = {
                 "mode": "PROD", "fwuid": self.fwuid, "app": "siteforce:communityApp",
-                "loaded": {"APPLICATION@markup://siteforce:communityApp": "REQUIRED"},
+                "loaded": {"APPLICATION@markup://siteforce:communityApp": self.app_hash},
                 "dn": [], "globals": {}, "uad": True
             }
 
             post_data = {
                 'message': json.dumps(message),
                 'aura.context': json.dumps(context),
-                'aura.pageURI': f'/s/account/{record_id}/detail', 
+                'aura.pageURI': f'/s/account/{record_id}/detail',
                 'aura.token': self.aura_token
             }
-            
+
             url = f"{self.BASE_URL}/s/sfsites/aura?r=10&ui.force.components.controllers.recordGlobalValueProvider.RecordGvpController.getRecord=1"
-            
+
             resp = self.session.post(url, data=urlencode(post_data), headers={
                 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
                 'Referer': f"{self.BASE_URL}/s/account/{record_id}/detail"
-            })
-            
+            }, timeout=30)
+
+            if resp.status_code in (401, 403):
+                return "INVALID_SESSION"
             if resp.status_code != 200:
                 return None
-            
-            data = resp.json()
+
+            data, estado = self._parse_aura(resp.text)
+            if estado == 'out_of_sync':
+                return "OUT_OF_SYNC"
+            if estado == 'invalid_session':
+                return "INVALID_SESSION"
+            if data is None:
+                return None
             
             # Buscar en Global Value Providers
             context_data = data.get("context", {})
@@ -347,16 +409,36 @@ class AuraSegmentacionAPI:
         except Exception:
             return None
 
-    def buscar_segmento(self, ruc):
-        """Método simplificado para buscar segmento de un RUC."""
-        account_id = self.search_ruc(ruc)
-        if account_id == "SIN_RESULTADOS":
-            return "Sin Segmento"
-        if not account_id:
-            return None
-        data = self.get_segmentation_data(account_id)
-        if data:
-            return data.get("TipoCliente") or data.get("Segmento") or "Sin Datos"
+    def buscar_segmento(self, ruc, max_intentos=3):
+        """
+        Busca el segmento de un RUC con reintentos.
+        - OUT_OF_SYNC: Salesforce actualizó versión -> reintenta con el fwuid nuevo
+        - INVALID_SESSION: la sesión expiró -> re-login automático
+        - Error de red / respuesta vacía -> espera con backoff y reintenta
+        """
+        for intento in range(1, max_intentos + 1):
+            try:
+                account_id = self.search_ruc(ruc)
+                if account_id == "SIN_RESULTADOS":
+                    return "Sin Segmento"
+
+                if account_id and account_id not in ("OUT_OF_SYNC", "INVALID_SESSION"):
+                    data = self.get_segmentation_data(account_id)
+                    if isinstance(data, dict):
+                        return data.get("TipoCliente") or data.get("Segmento") or "Sin Datos"
+                    estado = data
+                else:
+                    estado = account_id
+
+                if estado == "INVALID_SESSION":
+                    self.relogin()
+                elif estado == "OUT_OF_SYNC":
+                    print(f"[Aura] Versión de Salesforce cambió, reintentando {ruc}...")
+                else:
+                    time.sleep(1.5 * intento)
+            except requests.RequestException as e:
+                print(f"[Red] {ruc}: {str(e)[:60]} (intento {intento}/{max_intentos})")
+                time.sleep(2 * intento)
         return None
 
 

@@ -61,3 +61,6 @@ package-lock.json
 
 # Processed messages cache
 processed_messages.json
+
+# Claves de cuentas de servicio de Google (no subir)
+ventascenter-*.json
