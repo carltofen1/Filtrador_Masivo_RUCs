@@ -64,3 +64,7 @@ processed_messages.json
 
 # Claves de cuentas de servicio de Google (no subir)
 ventascenter-*.json
+
+# Comprimidos de builds (dist.rar pesaba 57 MB en el historial)
+*.rar
+*.zip
